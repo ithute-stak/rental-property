@@ -58,17 +58,19 @@ class RealtimeClient {
   Timer? _reconnectTimer;
   bool _shouldRun = false;
   bool _connecting = false;
+  bool _disposed = false;
   int _reconnectAttempt = 0;
 
   Stream<RealtimeEvent> get events => _events.stream;
 
   Future<void> start() async {
+    if (_disposed) return;
     _shouldRun = true;
     await _connect();
   }
 
   Future<void> _connect() async {
-    if (!_shouldRun || _connecting || _subscription != null) return;
+    if (_disposed || !_shouldRun || _connecting || _subscription != null) return;
     final token = await _tokenStore.read();
     if (token == null || token.isEmpty) return;
 
@@ -77,7 +79,7 @@ class RealtimeClient {
       final channel = WebSocketChannel.connect(_uri);
       _channel = channel;
       await channel.ready.timeout(const Duration(seconds: 10));
-      if (!_shouldRun) {
+      if (!_shouldRun || _disposed) {
         await channel.sink.close();
         return;
       }
@@ -131,7 +133,7 @@ class RealtimeClient {
   }
 
   void _scheduleReconnect() {
-    if (!_shouldRun || _reconnectTimer != null) return;
+    if (_disposed || !_shouldRun || _reconnectTimer != null) return;
     final seconds = switch (_reconnectAttempt) {
       0 => 1,
       1 => 2,
@@ -169,6 +171,8 @@ class RealtimeClient {
   }
 
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     await stop();
     await _events.close();
   }
