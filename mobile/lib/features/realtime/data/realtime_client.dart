@@ -51,6 +51,7 @@ class RealtimeClient {
   final Uri _uri;
   final TokenStore _tokenStore;
   final StreamController<RealtimeEvent> _events = StreamController.broadcast();
+  final Set<String> _seenNotificationIds = <String>{};
 
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
@@ -104,12 +105,25 @@ class RealtimeClient {
       if (event.type == 'ready') {
         _reconnectAttempt = 0;
       }
+      if (event.type == 'notification.created' && !_acceptNotification(event)) {
+        return;
+      }
       if (event.type != 'ping' && !_events.isClosed) {
         _events.add(event);
       }
     } catch (_) {
       // Ignore malformed server frames; the durable HTTP notification list remains authoritative.
     }
+  }
+
+  bool _acceptNotification(RealtimeEvent event) {
+    final id = event.notification?['id']?.toString();
+    if (id == null || id.isEmpty) return true;
+    if (!_seenNotificationIds.add(id)) return false;
+    if (_seenNotificationIds.length > 200) {
+      _seenNotificationIds.remove(_seenNotificationIds.first);
+    }
+    return true;
   }
 
   void _handleDisconnect() {
