@@ -34,7 +34,9 @@ docker run --rm \
   --entrypoint /bin/sh \
   "$MC_IMAGE" \
   -c '
-    mc alias set source http://minio:9000 "$OBJECT_STORAGE_ACCESS_KEY" "$OBJECT_STORAGE_SECRET_KEY" >/dev/null &&
+    until mc alias set source http://minio:9000 "$OBJECT_STORAGE_ACCESS_KEY" "$OBJECT_STORAGE_SECRET_KEY" >/dev/null 2>&1; do
+      sleep 2
+    done
     mc mirror --overwrite source/"$OBJECT_STORAGE_BUCKET" /backup
   '
 
