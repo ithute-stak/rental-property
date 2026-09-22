@@ -109,6 +109,9 @@ class ApiAuthRepository implements AuthRepository {
           data: {'refresh_token': refreshToken},
         );
       }
+    } on DioException {
+      // Local logout must still work offline. Server-side session expiry and
+      // rotation/reuse protection remain the fallback if revocation cannot be delivered.
     } finally {
       await _tokenStore.clear();
     }
