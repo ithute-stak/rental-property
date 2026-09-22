@@ -90,6 +90,8 @@ async def _seed_pending_booking() -> tuple[uuid.UUID, str]:
                 ),
             ]
         )
+        await db.flush()
+
         db.add(
             Property(
                 id=property_id,
@@ -110,6 +112,8 @@ async def _seed_pending_booking() -> tuple[uuid.UUID, str]:
                 security_features={},
             )
         )
+        await db.flush()
+
         db.add(
             Unit(
                 id=unit_id,
@@ -121,6 +125,8 @@ async def _seed_pending_booking() -> tuple[uuid.UUID, str]:
                 available_from=date.today(),
             )
         )
+        await db.flush()
+
         db.add(
             Booking(
                 id=booking_id,
@@ -133,6 +139,8 @@ async def _seed_pending_booking() -> tuple[uuid.UUID, str]:
                 payment_due_at=datetime.now(timezone.utc) + timedelta(hours=1),
             )
         )
+        await db.flush()
+
         db.add(
             BookingPayment(
                 booking_id=booking_id,
