@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:rental_property/features/admin/data/api_audit_repository.dart';
+import 'package:rental_property/features/admin/presentation/audit_trail_screen.dart';
 import 'package:rental_property/features/analytics/data/api_analytics_repository.dart';
 
 class AnalyticsScreen extends StatefulWidget {
@@ -36,6 +38,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.isAdmin ? 'Mosala analytics' : 'Portfolio analytics'),
+        actions: [
+          if (widget.isAdmin)
+            IconButton(
+              tooltip: 'Audit trail',
+              icon: const Icon(Icons.manage_history_rounded),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AuditTrailScreen(
+                      repository: ApiAdminAuditRepository.fromEnvironment(),
+                    ),
+                  ),
+                );
+              },
+            ),
+        ],
       ),
       body: FutureBuilder<Object>(
         future: _future,
