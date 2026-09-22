@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     auth_secret_key: str = "change-this-secret-before-production"
     auth_algorithm: str = "HS256"
     access_token_minutes: int = 60
+    object_storage_endpoint: str = "http://localhost:9000"
+    object_storage_region: str = "us-east-1"
+    object_storage_bucket: str = "rental-property"
+    object_storage_access_key: str = "rental"
+    object_storage_secret_key: str = "rental-development-secret"
+    object_storage_public_base_url: str = "http://localhost:9000/rental-property"
+    media_upload_expiry_seconds: int = 900
+    object_storage_verify_uploads: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
