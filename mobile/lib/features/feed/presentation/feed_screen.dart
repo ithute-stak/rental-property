@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -31,6 +32,9 @@ class FeedScreen extends StatelessWidget {
             child: SearchBar(
               hintText: 'Area, town, landmark or property',
               leading: const Icon(Icons.search_rounded),
+              onSubmitted: (value) {
+                context.read<FeedBloc>().add(FeedRequested(query: value));
+              },
               trailing: [IconButton(onPressed: () {}, icon: const Icon(Icons.tune_rounded))],
             ),
           ),
@@ -47,8 +51,37 @@ class FeedScreen extends StatelessWidget {
                       itemBuilder: (_, index) => _PropertyCard(property: properties[index]),
                     ),
                   ),
-                FeedEmpty() => const Center(child: Text('No available properties yet.')),
-                FeedFailure(:final message) => Center(child: Text(message)),
+                FeedEmpty() => RefreshIndicator(
+                    onRefresh: () async => context.read<FeedBloc>().add(const FeedRequested()),
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 120),
+                        Icon(Icons.home_work_outlined, size: 48),
+                        SizedBox(height: 12),
+                        Center(child: Text('No available properties match your search.')),
+                      ],
+                    ),
+                  ),
+                FeedFailure(:final message) => Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.cloud_off_outlined, size: 48),
+                          const SizedBox(height: 12),
+                          Text(message, textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          FilledButton.icon(
+                            onPressed: () => context.read<FeedBloc>().add(const FeedRequested()),
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Try again'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               },
             ),
           ),
@@ -117,11 +150,20 @@ class _PropertyCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
+            SizedBox(
               height: 190,
               width: double.infinity,
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: const Center(child: Icon(Icons.home_work_outlined, size: 54)),
+              child: property.imageUrl.isEmpty
+                  ? ColoredBox(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      child: const Center(child: Icon(Icons.home_work_outlined, size: 54)),
+                    )
+                  : CachedNetworkImage(
+                      imageUrl: property.imageUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (_, _) => const Center(child: CircularProgressIndicator()),
+                      errorWidget: (_, _, _) => const Center(child: Icon(Icons.broken_image_outlined)),
+                    ),
             ),
             Padding(
               padding: const EdgeInsets.all(16),
@@ -135,7 +177,13 @@ class _PropertyCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 6),
-                  Text('${property.area}, ${property.town}'),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined, size: 18),
+                      const SizedBox(width: 4),
+                      Expanded(child: Text('${property.area}, ${property.town}')),
+                    ],
+                  ),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
@@ -147,7 +195,7 @@ class _PropertyCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    '${currency.format(property.monthlyRent)} / month',
+                    'From ${currency.format(property.monthlyRent)} / month',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ],

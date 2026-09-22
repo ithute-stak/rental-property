@@ -55,6 +55,18 @@ class PropertyRead(BaseModel):
     security_features: dict
 
 
+class PropertyFeedItem(BaseModel):
+    id: uuid.UUID
+    title: str
+    district: str
+    town: str
+    area: str | None
+    security_level: str
+    monthly_rent: Decimal
+    available_rooms: int
+    image_url: str | None = None
+
+
 class UnitCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     monthly_rent: Decimal = Field(ge=0, max_digits=12, decimal_places=2)

@@ -4,7 +4,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from geoalchemy2 import Geography
 from geoalchemy2.elements import WKTElement
-from sqlalchemy import cast, func, select
+from sqlalchemy import cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_optional_user, require_roles
@@ -21,6 +21,7 @@ from app.models.rental import (
 )
 from app.schemas.property import (
     PropertyCreate,
+    PropertyFeedItem,
     PropertyRead,
     PropertyUpdate,
     UnitCreate,
@@ -79,6 +80,89 @@ async def create_property(
     await db.commit()
     await db.refresh(property_row)
     return property_row
+
+
+@router.get("/feed", response_model=list[PropertyFeedItem])
+async def property_feed(
+    q: str | None = Query(default=None, max_length=120),
+    district: str | None = Query(default=None, max_length=100),
+    town: str | None = Query(default=None, max_length=100),
+    min_rent: Decimal | None = Query(default=None, ge=0),
+    max_rent: Decimal | None = Query(default=None, ge=0),
+    latitude: Decimal | None = Query(default=None, ge=-90, le=90),
+    longitude: Decimal | None = Query(default=None, ge=-180, le=180),
+    radius_km: Decimal = Query(default=10, gt=0, le=100),
+    limit: int = Query(default=30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> list[PropertyFeedItem]:
+    if min_rent is not None and max_rent is not None and min_rent > max_rent:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Minimum rent cannot exceed maximum rent",
+        )
+    if (latitude is None) != (longitude is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Latitude and longitude must be supplied together",
+        )
+
+    available_statuses = [UnitStatus.AVAILABLE.value, UnitStatus.VACATING_SOON.value]
+    available_rooms = func.count(Unit.id).label("available_rooms")
+    monthly_rent = func.min(Unit.monthly_rent).label("monthly_rent")
+
+    query = (
+        select(Property, available_rooms, monthly_rent)
+        .join(Unit, Unit.property_id == Property.id)
+        .where(
+            Property.status == PropertyStatus.ACTIVE.value,
+            Unit.status.in_(available_statuses),
+        )
+        .group_by(Property.id)
+    )
+
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        query = query.where(
+            or_(
+                Property.title.ilike(term),
+                Property.area.ilike(term),
+                Property.town.ilike(term),
+                Property.district.ilike(term),
+                Property.physical_address.ilike(term),
+            )
+        )
+    if district:
+        query = query.where(func.lower(Property.district) == district.strip().lower())
+    if town:
+        query = query.where(func.lower(Property.town) == town.strip().lower())
+    if min_rent is not None:
+        query = query.where(Unit.monthly_rent >= min_rent)
+    if max_rent is not None:
+        query = query.where(Unit.monthly_rent <= max_rent)
+
+    if latitude is not None and longitude is not None:
+        search_point = _search_point(latitude, longitude)
+        distance_metres = float(radius_km) * 1000
+        query = query.where(func.ST_DWithin(Property.location, search_point, distance_metres))
+        query = query.order_by(func.ST_Distance(Property.location, search_point))
+    else:
+        query = query.order_by(Property.created_at.desc())
+
+    result = await db.execute(query.limit(limit))
+    return [
+        PropertyFeedItem(
+            id=property_row.id,
+            title=property_row.title,
+            district=property_row.district,
+            town=property_row.town,
+            area=property_row.area,
+            security_level=property_row.security_level,
+            monthly_rent=rent,
+            available_rooms=room_count,
+            image_url=None,
+        )
+        for property_row, room_count, rent in result.all()
+    ]
 
 
 @router.get("", response_model=list[PropertyRead])

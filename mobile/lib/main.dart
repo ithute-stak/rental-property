@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:rental_property/features/feed/data/api_feed_repository.dart';
+import 'package:rental_property/features/feed/domain/feed_repository.dart';
 import 'package:rental_property/features/feed/presentation/bloc/feed_bloc.dart';
 import 'package:rental_property/features/feed/presentation/feed_screen.dart';
 
 void main() {
-  runApp(const RentalPropertyApp());
+  runApp(RentalPropertyApp(feedRepository: ApiFeedRepository.fromEnvironment()));
 }
 
 class RentalPropertyApp extends StatelessWidget {
-  const RentalPropertyApp({super.key});
+  const RentalPropertyApp({super.key, required this.feedRepository});
+
+  final FeedRepository feedRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +33,7 @@ class RentalPropertyApp extends StatelessWidget {
         ),
       ),
       home: BlocProvider(
-        create: (_) => FeedBloc()..add(const FeedRequested()),
+        create: (_) => FeedBloc(feedRepository)..add(const FeedRequested()),
         child: const FeedScreen(),
       ),
     );
