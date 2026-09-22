@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     auth_secret_key: str = "change-this-secret-before-production"
     auth_algorithm: str = "HS256"
     access_token_minutes: int = 60
+    login_rate_limit_attempts: int = 10
+    login_rate_limit_window_seconds: int = 300
     object_storage_endpoint: str = "http://localhost:9000"
     object_storage_region: str = "us-east-1"
     object_storage_bucket: str = "rental-property"
@@ -34,6 +36,8 @@ class Settings(BaseSettings):
         origins = self.cors_origin_list
         if "*" in origins:
             raise ValueError("CORS_ORIGINS cannot use '*' when authenticated requests are enabled")
+        if self.login_rate_limit_attempts <= 0 or self.login_rate_limit_window_seconds <= 0:
+            raise ValueError("Login rate-limit settings must be positive")
 
         if self.app_env.strip().lower() == "production":
             if (
