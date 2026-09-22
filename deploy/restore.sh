@@ -68,8 +68,10 @@ docker run --rm \
   --entrypoint /bin/sh \
   "$MC_IMAGE" \
   -c '
-    mc alias set target http://minio:9000 "$OBJECT_STORAGE_ACCESS_KEY" "$OBJECT_STORAGE_SECRET_KEY" >/dev/null &&
-    mc mb --ignore-existing target/"$OBJECT_STORAGE_BUCKET" >/dev/null &&
+    until mc alias set target http://minio:9000 "$OBJECT_STORAGE_ACCESS_KEY" "$OBJECT_STORAGE_SECRET_KEY" >/dev/null 2>&1; do
+      sleep 2
+    done
+    mc mb --ignore-existing target/"$OBJECT_STORAGE_BUCKET" >/dev/null
     mc mirror --overwrite --remove /backup target/"$OBJECT_STORAGE_BUCKET"
   '
 
@@ -79,4 +81,4 @@ compose run --rm migrate
 echo "Starting application services"
 compose up -d api worker caddy
 
-echo "Restore completed. Verify https://${API_DOMAIN:-your-api-domain}/api/v1/health/ready before reopening traffic."
+echo "Restore completed. Verify the public /api/v1/health/ready endpoint before reopening traffic."
