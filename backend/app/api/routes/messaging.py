@@ -163,12 +163,15 @@ async def list_messages(
     db: AsyncSession = Depends(get_db),
 ) -> list[MessageRead]:
     await _conversation_or_404(db, conversation_id, user)
-    rows = await db.scalars(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at.asc())
-        .limit(limit)
+    rows = list(
+        await db.scalars(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(limit)
+        )
     )
+    rows.reverse()
     return [await _message_read(db, row, user) for row in rows]
 
 
