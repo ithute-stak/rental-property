@@ -50,6 +50,7 @@ class ViewingRequest(Base):
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     message: Mapped[str | None] = mapped_column(Text)
     response_note: Mapped[str | None] = mapped_column(Text)
+    reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

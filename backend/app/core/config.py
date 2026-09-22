@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     object_storage_public_base_url: str = "http://localhost:9000/rental-property"
     media_upload_expiry_seconds: int = 900
     object_storage_verify_uploads: bool = True
+    maintenance_interval_seconds: int = 60
+    maintenance_lock_seconds: int = 55
+    viewing_reminder_hours: int = 24
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

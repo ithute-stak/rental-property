@@ -52,6 +52,35 @@ services:
       exit 0;
       "
 
+  migrate:
+    build:
+      context: ./backend
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql+asyncpg://rental:rental@db:5432/rental_property
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  worker:
+    build:
+      context: ./backend
+    command: mosala-worker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://rental:rental@db:5432/rental_property
+      REDIS_URL: redis://redis:6379/0
+      MAINTENANCE_INTERVAL_SECONDS: 60
+      MAINTENANCE_LOCK_SECONDS: 55
+      VIEWING_REMINDER_HOURS: 24
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

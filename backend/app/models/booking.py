@@ -25,6 +25,7 @@ class PaymentStatus(str, enum.Enum):
     CONFIRMED = "confirmed"
     REJECTED = "rejected"
     REFUNDED = "refunded"
+    EXPIRED = "expired"
 
 
 class LedgerDirection(str, enum.Enum):

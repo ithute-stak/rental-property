@@ -260,6 +260,7 @@ async def decide_viewing(
     row.status = payload.status
     row.scheduled_at = scheduled_at
     row.response_note = payload.note
+    row.reminder_sent_at = None
     if payload.status == ViewingStatus.ACCEPTED.value:
         title = "Viewing request accepted"
         body = f"Your viewing for {property_row.title} has been accepted."
