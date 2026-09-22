@@ -59,7 +59,7 @@ class AdminAuditQuery {
   final int limit;
 
   bool get hasFilters => [action, entityType, entityId, actorId, requestId]
-      .any((value) => value != null && value!.trim().isNotEmpty) ||
+      .any((value) => value != null && value.trim().isNotEmpty) ||
       since != null ||
       until != null;
 
