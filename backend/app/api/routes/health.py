@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.core.database import SessionFactory
 from app.core.redis import get_redis
 
@@ -10,6 +11,15 @@ router = APIRouter()
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/health/live")
+async def liveness() -> dict[str, str]:
+    return {
+        "status": "ok",
+        "version": settings.app_version,
+        "release": settings.release_sha,
+    }
 
 
 @router.get("/health/ready")

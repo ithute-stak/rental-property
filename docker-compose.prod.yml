@@ -3,6 +3,8 @@ name: mosala-rentals
 x-app-environment: &app-environment
   APP_ENV: production
   APP_NAME: Mosala Rental Property API
+  APP_VERSION: ${APP_VERSION:-0.1.0}
+  RELEASE_SHA: ${RELEASE_SHA:-unknown}
   API_V1_PREFIX: /api/v1
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
   REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
