@@ -55,7 +55,7 @@ class ApiAuthRepository implements AuthRepository {
         '/auth/login',
         data: {'identifier': identifier.trim(), 'password': password},
       );
-      return _storeSession(response.data!);
+      return await _storeSession(response.data!);
     } on DioException catch (error) {
       throw AuthException(_message(error));
     }
