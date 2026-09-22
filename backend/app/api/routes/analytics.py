@@ -107,7 +107,8 @@ async def admin_overview(
                 BookingStatus.CONFIRMED.value,
                 BookingStatus.FULFILLED.value,
             ]),
-            Booking.created_at >= month_start,
+            Booking.confirmed_at.is_not(None),
+            Booking.confirmed_at >= month_start,
         ),
     )
     booking_funds_confirmed = await db.scalar(
