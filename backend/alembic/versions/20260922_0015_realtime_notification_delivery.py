@@ -19,6 +19,18 @@ def upgrade() -> None:
         "notifications",
         sa.Column("realtime_published_at", sa.DateTime(timezone=True), nullable=True),
     )
+
+    # Notifications that predate realtime delivery are historical inbox rows,
+    # not new realtime events. Mark them as already handled so deployment does
+    # not replay the entire notification history to currently connected users.
+    op.execute(
+        """
+        UPDATE notifications
+        SET realtime_published_at = created_at
+        WHERE realtime_published_at IS NULL
+        """
+    )
+
     op.create_index(
         "ix_notifications_realtime_pending",
         "notifications",
