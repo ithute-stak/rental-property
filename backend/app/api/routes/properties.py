@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_optional_user, require_roles
 from app.core.database import get_db
 from app.core.storage import storage
+from app.models.booking import Booking, BookingStatus
+from app.models.engagement import ViewingRequest, ViewingStatus
 from app.models.media import PropertyMedia
 from app.models.rental import (
     LandlordProfile,
@@ -26,6 +28,7 @@ from app.schemas.property import (
     PropertyFeedItem,
     PropertyRead,
     PropertyUpdate,
+    PublicPropertyRead,
     UnitCreate,
     UnitRead,
     UnitUpdate,
@@ -47,7 +50,6 @@ def _fuzzy_score(search_text: str):
         func.similarity(func.coalesce(Property.area, ""), search_text),
         func.similarity(func.coalesce(Property.town, ""), search_text),
         func.similarity(func.coalesce(Property.district, ""), search_text),
-        func.similarity(func.coalesce(Property.physical_address, ""), search_text),
     )
 
 
@@ -72,6 +74,44 @@ def _ensure_editable(row: Property) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="Only draft or rejected properties can be edited",
         )
+
+
+async def _can_view_exact_location(
+    db: AsyncSession,
+    row: Property,
+    user: User | None,
+) -> bool:
+    if user is None:
+        return False
+    if row.owner_id == user.id or user.role == UserRole.ADMIN.value:
+        return True
+
+    accepted_viewing = await db.scalar(
+        select(ViewingRequest.id)
+        .where(
+            ViewingRequest.property_id == row.id,
+            ViewingRequest.requester_id == user.id,
+            ViewingRequest.status == ViewingStatus.ACCEPTED.value,
+        )
+        .limit(1)
+    )
+    if accepted_viewing is not None:
+        return True
+
+    confirmed_booking = await db.scalar(
+        select(Booking.id)
+        .join(Unit, Unit.id == Booking.unit_id)
+        .where(
+            Unit.property_id == row.id,
+            Booking.seeker_id == user.id,
+            Booking.status.in_([
+                BookingStatus.CONFIRMED.value,
+                BookingStatus.FULFILLED.value,
+            ]),
+        )
+        .limit(1)
+    )
+    return confirmed_booking is not None
 
 
 @router.post("", response_model=PropertyRead, status_code=status.HTTP_201_CREATED)
@@ -155,7 +195,6 @@ async def property_feed(
                 Property.area.ilike(term),
                 Property.town.ilike(term),
                 Property.district.ilike(term),
-                Property.physical_address.ilike(term),
                 search_score >= 0.18,
             )
         )
@@ -199,7 +238,7 @@ async def property_feed(
     ]
 
 
-@router.get("", response_model=list[PropertyRead])
+@router.get("", response_model=list[PublicPropertyRead])
 async def list_properties(
     district: str | None = None,
     town: str | None = None,
@@ -208,13 +247,13 @@ async def list_properties(
     radius_km: Decimal = Query(default=10, gt=0, le=100),
     limit: int = Query(default=30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-) -> list[Property]:
+) -> list[PublicPropertyRead]:
     query = select(Property).where(Property.status == PropertyStatus.ACTIVE.value)
 
     if district:
-        query = query.where(func.lower(Property.district) == district.lower())
+        query = query.where(func.lower(Property.district) == district.strip().lower())
     if town:
-        query = query.where(func.lower(Property.town) == town.lower())
+        query = query.where(func.lower(Property.town) == town.strip().lower())
     if (latitude is None) != (longitude is None):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -229,7 +268,7 @@ async def list_properties(
         query = query.order_by(Property.created_at.desc())
 
     rows = await db.scalars(query.limit(limit))
-    return list(rows)
+    return [PublicPropertyRead.model_validate(row) for row in rows]
 
 
 @router.get("/mine", response_model=list[PropertyRead])
@@ -243,18 +282,22 @@ async def list_my_properties(
     return list(rows)
 
 
-@router.get("/{property_id}", response_model=PropertyRead)
+@router.get("/{property_id}", response_model=PropertyRead | PublicPropertyRead)
 async def get_property(
     property_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User | None = Depends(get_optional_user),
-) -> Property:
+) -> PropertyRead | PublicPropertyRead:
     row = await _property_or_404(db, property_id)
     if row.status != PropertyStatus.ACTIVE.value:
         if user is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
         _ensure_owner_or_admin(row, user)
-    return row
+        return PropertyRead.model_validate(row)
+
+    if await _can_view_exact_location(db, row, user):
+        return PropertyRead.model_validate(row)
+    return PublicPropertyRead.model_validate(row)
 
 
 @router.patch("/{property_id}", response_model=PropertyRead)

@@ -55,6 +55,22 @@ class PropertyRead(BaseModel):
     security_features: dict
 
 
+class PublicPropertyRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    description: str
+    property_type: str
+    status: str
+    district: str
+    town: str
+    area: str | None
+    total_rooms: int
+    security_level: str
+    security_features: dict
+
+
 class PropertyFeedItem(BaseModel):
     id: uuid.UUID
     title: str
