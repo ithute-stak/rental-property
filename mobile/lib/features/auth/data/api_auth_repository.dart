@@ -82,7 +82,7 @@ class ApiAuthRepository implements AuthRepository {
           'role': role,
         },
       );
-      return login(identifier: phone, password: password);
+      return await login(identifier: phone, password: password);
     } on DioException catch (error) {
       throw AuthException(_message(error));
     }

@@ -35,7 +35,7 @@ class AccountScreen extends StatelessWidget {
                 const SizedBox(height: 20),
                 Card(
                   child: ListTile(
-                    leading: Icon(user.isLandlord ? Icons.apartment_rounded : Icons.home_search_rounded),
+                    leading: Icon(user.isLandlord ? Icons.apartment_rounded : Icons.travel_explore_rounded),
                     title: Text(user.isLandlord ? 'Landlord account' : 'House seeker account'),
                     subtitle: Text(
                       user.isLandlord
