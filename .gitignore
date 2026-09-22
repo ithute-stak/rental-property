@@ -9,6 +9,10 @@ __pycache__/
 # Environment
 .env
 *.env.local
+deploy/.env.production
+
+# Production backups
+backups/
 
 # Flutter / Dart
 .dart_tool/
