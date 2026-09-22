@@ -241,9 +241,48 @@ class _AuthenticatedAccountView extends StatelessWidget {
             icon: const Icon(Icons.logout_rounded),
             label: const Text('Sign out'),
           ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () => _confirmLogoutAll(context),
+            icon: const Icon(Icons.phonelink_erase_rounded),
+            label: const Text('Sign out all devices'),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Use “Sign out all devices” if a phone is lost or you suspect someone else has access to your account.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmLogoutAll(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Sign out all devices?'),
+        content: const Text(
+          'Mosala Rentals will revoke the refresh sessions for this account on every device. You will need to sign in again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Sign out all'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final error = await context.read<SessionCubit>().logoutAll();
+    if (!context.mounted || error == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
   }
 }
 
