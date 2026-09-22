@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:rental_property/features/feed/domain/feed_filters.dart';
 import 'package:rental_property/features/feed/domain/feed_repository.dart';
 import 'package:rental_property/features/feed/domain/property_summary.dart';
 
@@ -11,12 +12,13 @@ sealed class FeedEvent extends Equatable {
 }
 
 final class FeedRequested extends FeedEvent {
-  const FeedRequested({this.query});
+  const FeedRequested({this.query, this.filters});
 
   final String? query;
+  final FeedFilters? filters;
 
   @override
-  List<Object?> get props => [query];
+  List<Object?> get props => [query, filters];
 }
 
 sealed class FeedState extends Equatable {
@@ -31,25 +33,32 @@ final class FeedLoading extends FeedState {
 }
 
 final class FeedLoaded extends FeedState {
-  const FeedLoaded(this.properties);
+  const FeedLoaded(this.properties, {required this.filters});
 
   final List<PropertySummary> properties;
+  final FeedFilters filters;
 
   @override
-  List<Object?> get props => [properties];
+  List<Object?> get props => [properties, filters];
 }
 
 final class FeedEmpty extends FeedState {
-  const FeedEmpty();
+  const FeedEmpty({required this.filters});
+
+  final FeedFilters filters;
+
+  @override
+  List<Object?> get props => [filters];
 }
 
 final class FeedFailure extends FeedState {
-  const FeedFailure(this.message);
+  const FeedFailure(this.message, {required this.filters});
 
   final String message;
+  final FeedFilters filters;
 
   @override
-  List<Object?> get props => [message];
+  List<Object?> get props => [message, filters];
 }
 
 class FeedBloc extends Bloc<FeedEvent, FeedState> {
@@ -59,22 +68,34 @@ class FeedBloc extends Bloc<FeedEvent, FeedState> {
 
   final FeedRepository _repository;
   String _query = '';
+  FeedFilters _filters = const FeedFilters();
+
+  FeedFilters get filters => _filters;
 
   Future<void> _onRequested(FeedRequested event, Emitter<FeedState> emit) async {
     if (event.query != null) {
       _query = event.query!.trim();
     }
+    if (event.filters != null) {
+      _filters = event.filters!;
+    }
 
     emit(const FeedLoading());
     try {
-      final properties = await _repository.fetchProperties(query: _query);
+      final properties = await _repository.fetchProperties(
+        query: _query,
+        filters: _filters,
+      );
       if (properties.isEmpty) {
-        emit(const FeedEmpty());
+        emit(FeedEmpty(filters: _filters));
       } else {
-        emit(FeedLoaded(properties));
+        emit(FeedLoaded(properties, filters: _filters));
       }
     } catch (_) {
-      emit(const FeedFailure('Could not load rental listings. Please try again.'));
+      emit(FeedFailure(
+        'Could not load rental listings. Please try again.',
+        filters: _filters,
+      ));
     }
   }
 }
