@@ -64,6 +64,37 @@ services:
         condition: service_healthy
     restart: "no"
 
+  api:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://rental:rental@db:5432/rental_property
+      REDIS_URL: redis://redis:6379/0
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: rental-property
+      OBJECT_STORAGE_ACCESS_KEY: rental
+      OBJECT_STORAGE_SECRET_KEY: rental-development-secret
+      OBJECT_STORAGE_PUBLIC_BASE_URL: http://localhost:9000/rental-property
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   worker:
     build:
       context: ./backend
