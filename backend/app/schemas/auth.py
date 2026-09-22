@@ -17,6 +17,14 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=32, max_length=512)
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str = Field(min_length=32, max_length=512)
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -30,6 +38,8 @@ class UserRead(BaseModel):
 
 class TokenRead(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     expires_in_seconds: int
+    refresh_expires_in_seconds: int
     user: UserRead

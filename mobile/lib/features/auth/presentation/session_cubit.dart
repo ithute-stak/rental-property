@@ -93,4 +93,16 @@ class SessionCubit extends Cubit<SessionState> {
     await _repository.logout();
     emit(const SessionGuest());
   }
+
+  Future<String?> logoutAll() async {
+    try {
+      await _repository.logoutAll();
+      emit(const SessionGuest());
+      return null;
+    } on AuthException catch (error) {
+      return error.message;
+    } catch (_) {
+      return 'Could not sign out the other devices. Please try again.';
+    }
+  }
 }
