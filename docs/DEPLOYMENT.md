@@ -33,12 +33,16 @@ openssl rand -hex 32   # MinIO secret
 
 Set the real API/media domains, TLS email, browser CORS origins and storage public URL. `OBJECT_STORAGE_PUBLIC_BASE_URL` should normally be `https://<MEDIA_DOMAIN>/<OBJECT_STORAGE_BUCKET>`.
 
+Set `APP_VERSION` to the human release version and `RELEASE_SHA` to the exact Git commit deployed. The liveness endpoint exposes both values so an operator can immediately confirm which build is serving traffic.
+
 ## 3. Validate before starting
 
 ```bash
 docker compose --env-file deploy/.env.production -f docker-compose.prod.yml config >/dev/null
-bash -n deploy/backup.sh deploy/restore.sh
+bash -n deploy/backup.sh deploy/restore.sh deploy/smoke.sh
 ```
+
+CI also validates the Caddyfile with the same Caddy image used in production.
 
 ## 4. Start the platform
 
@@ -49,13 +53,14 @@ docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -
 
 The one-shot `migrate` service runs Alembic before the API/worker start. MinIO initialization creates the configured media bucket and enables public object download for listing images.
 
-Verify readiness through the public API domain:
+Verify liveness and readiness through the public API domain:
 
 ```bash
+curl -fsS https://YOUR_API_DOMAIN/api/v1/health/live
 curl -fsS https://YOUR_API_DOMAIN/api/v1/health/ready
 ```
 
-Expected result reports `status=ready`, database OK and Redis OK.
+The liveness result includes the configured application version and release commit. Readiness reports database and Redis availability.
 
 ## 5. Provision the first Mosala administrator
 
@@ -88,10 +93,17 @@ Before each update, create a backup. Then update the repository and rebuild:
 ```bash
 bash deploy/backup.sh
 git pull --ff-only origin main
+```
+
+Update `RELEASE_SHA` in `deploy/.env.production` to the output of `git rev-parse HEAD`, update `APP_VERSION` when the release version changes, then continue:
+
+```bash
 docker compose --env-file deploy/.env.production -f docker-compose.prod.yml build
 docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d
-curl -fsS https://YOUR_API_DOMAIN/api/v1/health/ready
+bash deploy/smoke.sh
 ```
+
+The smoke script verifies HTTPS liveness, dependency readiness, request-ID propagation, HSTS, the public property feed, and unauthenticated access control on `/auth/me`.
 
 Do not run destructive Docker cleanup commands against named Mosala volumes.
 
@@ -126,7 +138,7 @@ CONFIRM_RESTORE=YES bash deploy/restore.sh backups/20260922T120000Z
 
 The script verifies checksums, stops API/worker writers, restores PostgreSQL and the MinIO bucket, applies newer Alembic migrations if required, then starts the application again.
 
-Always verify readiness and a representative landlord/property/booking workflow after restoration before reopening normal use.
+Always run `bash deploy/smoke.sh` and verify a representative landlord/property/booking workflow after restoration before reopening normal use.
 
 ## 10. Operational checks
 
@@ -136,17 +148,19 @@ Useful commands:
 # Service status
 docker compose --env-file deploy/.env.production -f docker-compose.prod.yml ps
 
-# API logs
+# API logs (request IDs, method/path, response status and duration; no request bodies/tokens)
 docker compose --env-file deploy/.env.production -f docker-compose.prod.yml logs -f api
 
 # Worker/realtime relay logs
 docker compose --env-file deploy/.env.production -f docker-compose.prod.yml logs -f worker
 
-# Reverse proxy / TLS logs
+# Reverse proxy / TLS JSON access logs
 docker compose --env-file deploy/.env.production -f docker-compose.prod.yml logs -f caddy
 ```
 
 Monitor disk space, backup age, PostgreSQL volume growth, API readiness and certificate renewal. Redis contains transient locks/pub-sub state and is not treated as the durable source of marketplace records.
+
+Every HTTP response carries `X-Request-ID`. Use it to correlate a user-visible failure with the API request log. The API also adds baseline browser security headers; Caddy remains responsible for HSTS because it terminates TLS.
 
 ## 11. Rollback principle
 
