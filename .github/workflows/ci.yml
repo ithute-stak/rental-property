@@ -106,8 +106,42 @@ jobs:
           --project-name rental_property
           --no-pub
           .
-      - name: Build Android release smoke APK
+      - name: Generate disposable CI upload keystore
         working-directory: mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          keystore="$PWD/android/app/ci-upload-keystore.jks"
+          keytool -genkeypair -noprompt \
+            -keystore "$keystore" \
+            -storetype JKS \
+            -storepass ci-release-password \
+            -keypass ci-release-password \
+            -alias ci-upload \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 365 \
+            -dname "CN=Mosala CI, OU=Engineering, O=Ithute Digital Solutions, L=Maseru, C=LS"
+          test -s "$keystore"
+          echo "ANDROID_KEYSTORE_PATH=$keystore" >> "$GITHUB_ENV"
+      - name: Configure signed Android release identity and manifest
+        working-directory: mobile
+        env:
+          GOOGLE_MAPS_API_KEY: ci-placeholder-not-for-production
+          ANDROID_KEYSTORE_PASSWORD: ci-release-password
+          ANDROID_KEY_ALIAS: ci-upload
+          ANDROID_KEY_PASSWORD: ci-release-password
+        run: >-
+          python3 tool/prepare_android_release.py
+          --application-id ls.co.mosala.rentals
+          --signed
+      - name: Build signed Android release smoke APK
+        working-directory: mobile
+        env:
+          GOOGLE_MAPS_API_KEY: ci-placeholder-not-for-production
+          ANDROID_KEYSTORE_PASSWORD: ci-release-password
+          ANDROID_KEY_ALIAS: ci-upload
+          ANDROID_KEY_PASSWORD: ci-release-password
         run: >-
           flutter build apk
           --release

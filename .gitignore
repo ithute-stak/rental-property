@@ -22,6 +22,16 @@ build/
 .flutter-plugins
 .flutter-plugins-dependencies
 
+# Generated Flutter platform runners
+mobile/android/
+mobile/ios/
+mobile/web/
+
+# Android signing material
+*.jks
+*.keystore
+**/key.properties
+
 # IDE / OS
 .idea/
 .vscode/
