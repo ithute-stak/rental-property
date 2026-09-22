@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     maintenance_interval_seconds: int = 60
     maintenance_lock_seconds: int = 300
     viewing_reminder_hours: int = 24
+    notification_relay_interval_seconds: float = 1.0
+    notification_relay_batch_size: int = 100
+    websocket_auth_timeout_seconds: int = 10
+    websocket_heartbeat_seconds: int = 20
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -38,6 +42,10 @@ class Settings(BaseSettings):
             raise ValueError("CORS_ORIGINS cannot use '*' when authenticated requests are enabled")
         if self.login_rate_limit_attempts <= 0 or self.login_rate_limit_window_seconds <= 0:
             raise ValueError("Login rate-limit settings must be positive")
+        if self.notification_relay_interval_seconds <= 0 or self.notification_relay_batch_size <= 0:
+            raise ValueError("Realtime notification relay settings must be positive")
+        if self.websocket_auth_timeout_seconds <= 0 or self.websocket_heartbeat_seconds <= 0:
+            raise ValueError("WebSocket timing settings must be positive")
 
         if self.app_env.strip().lower() == "production":
             if (
