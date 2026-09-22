@@ -106,8 +106,17 @@ jobs:
           --project-name rental_property
           --no-pub
           .
+      - name: Configure Android release identity and manifest
+        working-directory: mobile
+        env:
+          GOOGLE_MAPS_API_KEY: ci-placeholder-not-for-production
+        run: >-
+          python3 tool/prepare_android_release.py
+          --application-id ls.co.mosala.rentals
       - name: Build Android release smoke APK
         working-directory: mobile
+        env:
+          GOOGLE_MAPS_API_KEY: ci-placeholder-not-for-production
         run: >-
           flutter build apk
           --release
