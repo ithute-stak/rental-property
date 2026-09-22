@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rental_property/features/admin/presentation/admin_operations_screen.dart';
+import 'package:rental_property/features/analytics/data/api_analytics_repository.dart';
+import 'package:rental_property/features/analytics/presentation/analytics_screen.dart';
 import 'package:rental_property/features/auth/domain/app_user.dart';
 import 'package:rental_property/features/auth/presentation/session_cubit.dart';
 import 'package:rental_property/features/booking/data/api_booking_repository.dart';
 import 'package:rental_property/features/booking/presentation/booking_screens.dart';
 import 'package:rental_property/features/landlord/data/api_landlord_property_repository.dart';
 import 'package:rental_property/features/landlord/presentation/landlord_workspace_screen.dart';
+import 'package:rental_property/features/messaging/data/api_messaging_repository.dart';
+import 'package:rental_property/features/messaging/presentation/messaging_screens.dart';
 import 'package:rental_property/features/tenancy/data/api_tenancy_repository.dart';
 import 'package:rental_property/features/tenancy/presentation/tenancy_screens.dart';
 
@@ -70,7 +74,7 @@ class _AuthenticatedAccountView extends StatelessWidget {
           Text(user.phone, textAlign: TextAlign.center),
           if (user.email != null) Text(user.email!, textAlign: TextAlign.center),
           const SizedBox(height: 20),
-          if (user.isAdmin)
+          if (user.isAdmin) ...[
             Card(
               child: ListTile(
                 leading: const Icon(Icons.admin_panel_settings_outlined),
@@ -83,8 +87,29 @@ class _AuthenticatedAccountView extends StatelessWidget {
                   );
                 },
               ),
-            )
-          else if (user.isLandlord)
+            ),
+            const SizedBox(height: 10),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.analytics_outlined),
+                title: const Text('Marketplace analytics'),
+                subtitle: const Text(
+                  'See active adverts, vacancy, occupancy, pending work, confirmed funds and marketplace engagement.',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AnalyticsScreen(
+                        repository: ApiAnalyticsRepository.fromEnvironment(),
+                        isAdmin: true,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ] else if (user.isLandlord) ...[
             Card(
               child: ListTile(
                 leading: const Icon(Icons.apartment_rounded),
@@ -101,8 +126,47 @@ class _AuthenticatedAccountView extends StatelessWidget {
                   );
                 },
               ),
-            )
-          else if (isSeeker) ...[
+            ),
+            const SizedBox(height: 10),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.analytics_outlined),
+                title: const Text('Portfolio analytics'),
+                subtitle: const Text(
+                  'Track your units, vacancy, occupancy, bookings, viewing demand, saved homes and unread messages.',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AnalyticsScreen(
+                        repository: ApiAnalyticsRepository.fromEnvironment(),
+                        isAdmin: false,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.forum_outlined),
+                title: const Text('Messages'),
+                subtitle: const Text('Reply to house seekers without exposing your phone number.'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ConversationsScreen(
+                        repository: ApiMessagingRepository.fromEnvironment(),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ] else if (isSeeker) ...[
             Card(
               child: ListTile(
                 leading: const Icon(Icons.event_available_outlined),
@@ -134,6 +198,24 @@ class _AuthenticatedAccountView extends StatelessWidget {
                     MaterialPageRoute(
                       builder: (_) => TenantTenanciesScreen(
                         repository: ApiTenancyRepository.fromEnvironment(),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.forum_outlined),
+                title: const Text('Messages'),
+                subtitle: const Text('Keep property questions and landlord replies inside Mosala Rentals.'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ConversationsScreen(
+                        repository: ApiMessagingRepository.fromEnvironment(),
                       ),
                     ),
                   );

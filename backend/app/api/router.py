@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.routes import (
     admin,
     advertising,
+    analytics,
     auth,
     bookings,
     engagement,
@@ -26,5 +27,6 @@ api_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"]
 api_router.include_router(tenancies.router, prefix="/tenancies", tags=["tenancies"])
 api_router.include_router(engagement.router, prefix="/engagement", tags=["engagement"])
 api_router.include_router(messaging.router, prefix="/messaging", tags=["messaging"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
