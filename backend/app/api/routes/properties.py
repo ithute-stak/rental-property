@@ -1,8 +1,9 @@
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query, status
+from geoalchemy2 import Geography
 from geoalchemy2.elements import WKTElement
-from sqlalchemy import func, select
+from sqlalchemy import cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -37,15 +38,21 @@ async def list_properties(
     limit: int = Query(default=30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[Property]:
-    query = select(Property).where(Property.status.in_([PropertyStatus.APPROVED.value, PropertyStatus.ACTIVE.value]))
+    query = select(Property).where(
+        Property.status.in_([PropertyStatus.APPROVED.value, PropertyStatus.ACTIVE.value])
+    )
 
     if district:
         query = query.where(func.lower(Property.district) == district.lower())
     if town:
         query = query.where(func.lower(Property.town) == town.lower())
     if latitude is not None and longitude is not None:
-        search_point = func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326)
-        query = query.where(func.ST_DWithin(Property.location, search_point, radius_km * 1000))
+        search_point = cast(
+            func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326),
+            Geography(geometry_type="POINT", srid=4326),
+        )
+        distance_metres = float(radius_km) * 1000
+        query = query.where(func.ST_DWithin(Property.location, search_point, distance_metres))
         query = query.order_by(func.ST_Distance(Property.location, search_point))
     else:
         query = query.order_by(Property.created_at.desc())
