@@ -24,7 +24,7 @@ Repository/environment variable:
 MOSALA_PRODUCTION_API_BASE_URL=https://<production-api-domain>/api/v1
 ```
 
-Required Actions secrets:
+Required Actions secrets for every production bundle build:
 
 ```text
 ANDROID_KEYSTORE_BASE64
@@ -32,6 +32,12 @@ ANDROID_KEYSTORE_PASSWORD
 ANDROID_KEY_ALIAS
 ANDROID_KEY_PASSWORD
 GOOGLE_MAPS_API_KEY_ANDROID
+```
+
+Optional protected secret required only when the workflow is explicitly asked to publish to Google Play:
+
+```text
+GOOGLE_PLAY_SERVICE_ACCOUNT_JSON
 ```
 
 Do not commit any of those values.
@@ -76,6 +82,7 @@ Run **Android Production Release** from GitHub Actions and provide:
 - `version_name`, for example `1.0.0`
 - `version_code`, a positive integer that must increase for each Play Store upload
 - the application ID, normally `ls.co.mosala.rentals`
+- `publish_to_google_play`, normally left `false` until the release candidate has completed Mosala's approval/device-acceptance process
 
 The workflow will:
 
@@ -86,10 +93,35 @@ The workflow will:
 5. build a signed release `.aab` against the production API URL;
 6. verify the bundle signature;
 7. generate a SHA-256 checksum;
-8. create a GitHub/Sigstore build-provenance attestation for the exact `.aab`; and
-9. upload the `.aab` and checksum as a 30-day workflow artifact.
+8. create a GitHub/Sigstore build-provenance attestation for the exact `.aab`;
+9. upload the `.aab` and checksum as a 30-day workflow artifact; and
+10. only when `publish_to_google_play=true`, publish that already-verified bundle to the Google Play **internal** track.
 
-The workflow does **not** automatically publish to Google Play. Keeping bundle generation and store publication separate gives Mosala a final approval point before a release reaches users.
+Google Play publishing is deliberately opt-in. A normal production workflow run creates the signed, attested release candidate without sending it to Google Play.
+
+## Google Play internal-track publishing
+
+Mosala's automation intentionally supports only the Google Play **internal** track. It does not automate alpha, beta, staged production rollout, or full production release. Promotion beyond the internal track remains a separate Play Console approval decision.
+
+Before enabling `publish_to_google_play`:
+
+1. create the app in Google Play Console with package name `ls.co.mosala.rentals`;
+2. enable Play App Signing;
+3. enable the Google Play Android Developer API for the Google Cloud project used for publishing;
+4. create a dedicated service account for release automation;
+5. grant that account only the Play Console permissions needed to create/manage releases for the Mosala app;
+6. download its JSON key and store the complete JSON document as the protected `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` secret in the GitHub `production` environment; and
+7. ensure the requested `version_code` has never previously been uploaded to Google Play.
+
+When publishing is enabled, `mobile/tool/publish_google_play.py` uses the Android Publisher API transactionally:
+
+1. create an edit;
+2. upload the signed `.aab`;
+3. assign the uploaded version code to the `internal` track with release status `completed`;
+4. commit the edit; and
+5. attempt to discard the edit if a later step fails.
+
+The publisher never prints the service-account JSON. The workflow installs `google-auth` and `requests` only for the optional publishing step.
 
 ## Verify production bundle provenance
 
@@ -122,4 +154,4 @@ CI builds and validates both release package forms:
 1. a signed release APK for installation/device smoke testing; and
 2. a signed release App Bundle (`.aab`) to exercise the same Play Store packaging path used by the protected production workflow.
 
-The CI bundle is checked with `jarsigner`, given a SHA-256 checksum, and uploaded as a short-lived workflow artifact. This continuously validates package identity, manifest configuration, Gradle/native plugin compatibility, release signing configuration, APK packaging, and Play Store bundle packaging without exposing or requiring production secrets.
+The CI bundle is checked with `jarsigner`, given a SHA-256 checksum, and uploaded as a short-lived workflow artifact. CI also syntax-compiles the Android preparation and Google Play publishing helper scripts. This continuously validates package identity, manifest configuration, Gradle/native plugin compatibility, release signing configuration, APK packaging, and Play Store bundle packaging without exposing or requiring production secrets.
