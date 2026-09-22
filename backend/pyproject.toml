@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 mosala-worker = "app.worker:main"
+mosala-provision-admin = "app.provision_admin:main"
 
 [project.optional-dependencies]
 dev = [
