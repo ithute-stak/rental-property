@@ -78,7 +78,7 @@ class _MosalaBrandHeader extends StatelessWidget {
             label: 'Mosala Advertising and Marketing Agency logo',
             image: true,
             child: Image.asset(
-              'assets/branding/mosala_logo.png',
+              'assets/branding/mosala_logo.webp',
               height: 122,
               fit: BoxFit.contain,
             ),
