@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.database import SessionFactory, engine
@@ -67,6 +68,7 @@ def _feed_ids(client: TestClient) -> set[str]:
     return {str(item["id"]) for item in response.json()}
 
 
+@pytest.mark.acceptance
 def test_complete_mosala_rental_lifecycle() -> None:
     suffix = uuid.uuid4().hex[:10]
     admin_phone = _phone()
