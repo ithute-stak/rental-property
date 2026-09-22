@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     maintenance_interval_seconds: int = 60
     maintenance_lock_seconds: int = 300
     viewing_reminder_hours: int = 24
+    realtime_publish_interval_seconds: float = 2.0
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -38,6 +39,10 @@ class Settings(BaseSettings):
             raise ValueError("CORS_ORIGINS cannot use '*' when authenticated requests are enabled")
         if self.login_rate_limit_attempts <= 0 or self.login_rate_limit_window_seconds <= 0:
             raise ValueError("Login rate-limit settings must be positive")
+        if self.maintenance_interval_seconds <= 0 or self.maintenance_lock_seconds <= 0:
+            raise ValueError("Maintenance timing settings must be positive")
+        if self.realtime_publish_interval_seconds <= 0:
+            raise ValueError("REALTIME_PUBLISH_INTERVAL_SECONDS must be positive")
 
         if self.app_env.strip().lower() == "production":
             if (
