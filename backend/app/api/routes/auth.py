@@ -10,10 +10,35 @@ from app.core.rate_limit import consume_rate_limit, rate_limit_key
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.rental import LandlordProfile, User, UserRole
-from app.schemas.auth import LoginRequest, RegisterRequest, TokenRead, UserRead
+from app.schemas.auth import (
+    LoginRequest,
+    LogoutRequest,
+    RefreshRequest,
+    RegisterRequest,
+    TokenRead,
+    UserRead,
+)
+from app.services.sessions import (
+    InvalidRefreshToken,
+    RefreshTokenReuseDetected,
+    issue_refresh_token,
+    revoke_all_user_refresh_tokens,
+    revoke_refresh_token,
+    rotate_refresh_token,
+)
 
 router = APIRouter()
 _DUMMY_PASSWORD_HASH = hash_password("mosala-invalid-account-password")
+
+
+def _token_response(user: User, refresh_token: str) -> TokenRead:
+    return TokenRead(
+        access_token=create_access_token(user.id, user.role),
+        refresh_token=refresh_token,
+        expires_in_seconds=settings.access_token_minutes * 60,
+        refresh_expires_in_seconds=settings.refresh_token_days * 24 * 60 * 60,
+        user=UserRead.model_validate(user),
+    )
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -87,12 +112,45 @@ async def login(
         )
 
     await redis.delete(limit_key)
-    token = create_access_token(user.id, user.role)
-    return TokenRead(
-        access_token=token,
-        expires_in_seconds=settings.access_token_minutes * 60,
-        user=UserRead.model_validate(user),
-    )
+    refresh = await issue_refresh_token(db, user_id=user.id)
+    await db.commit()
+    return _token_response(user, refresh.raw_token)
+
+
+@router.post("/refresh", response_model=TokenRead)
+async def refresh_session(
+    payload: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TokenRead:
+    try:
+        user, refresh = await rotate_refresh_token(db, payload.refresh_token)
+    except RefreshTokenReuseDetected as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session reuse detected. Please sign in again.",
+        ) from exc
+    except InvalidRefreshToken as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh session is invalid or expired",
+        ) from exc
+    return _token_response(user, refresh.raw_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    payload: LogoutRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await revoke_refresh_token(db, payload.refresh_token)
+
+
+@router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_all(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await revoke_all_user_refresh_tokens(db, user.id)
 
 
 @router.get("/me", response_model=UserRead)
