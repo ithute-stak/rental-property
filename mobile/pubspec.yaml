@@ -1,5 +1,5 @@
 name: rental_property
-description: Location-aware rental marketplace for Lesotho and beyond.
+description: Mosala Advertising and Marketing Agency rental marketplace, built by Ithute Digital Solutions.
 publish_to: none
 version: 0.1.0+1
 
@@ -24,3 +24,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/mosala_logo.png

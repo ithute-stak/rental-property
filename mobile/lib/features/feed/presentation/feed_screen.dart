@@ -11,6 +11,7 @@ class FeedScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 16,
         title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -24,6 +25,7 @@ class FeedScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
+          const _MosalaBrandHeader(),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: SearchBar(
@@ -49,6 +51,49 @@ class FeedScreen extends StatelessWidget {
                 FeedFailure(:final message) => Center(child: Text(message)),
               },
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MosalaBrandHeader extends StatelessWidget {
+  const _MosalaBrandHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Column(
+        children: [
+          Semantics(
+            label: 'Mosala Advertising and Marketing Agency logo',
+            image: true,
+            child: Image.asset(
+              'assets/branding/mosala_logo.png',
+              height: 122,
+              fit: BoxFit.contain,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Rental Property Marketplace',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Built by Ithute Digital Solutions',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
         ],
       ),
