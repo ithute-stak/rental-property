@@ -43,7 +43,7 @@ jobs:
       - name: Validate production Docker Compose
         run: docker compose --env-file deploy/.env.production.example -f docker-compose.prod.yml config >/dev/null
       - name: Validate deployment scripts
-        run: bash -n deploy/backup.sh deploy/restore.sh
+        run: bash -n deploy/backup.sh deploy/restore.sh deploy/smoke.sh
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
