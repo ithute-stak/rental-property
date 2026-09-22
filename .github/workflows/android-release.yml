@@ -21,6 +21,9 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   android-production-bundle:
@@ -148,6 +151,11 @@ jobs:
           jarsigner -verify -verbose -certs "$bundle" | tee /tmp/mosala-jarsigner.txt
           grep -q "jar verified" /tmp/mosala-jarsigner.txt
           sha256sum "$bundle" > "$bundle.sha256"
+
+      - name: Attest signed Play Store bundle provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: mobile/build/app/outputs/bundle/release/app-release.aab
 
       - name: Upload Play Store bundle
         uses: actions/upload-artifact@v4

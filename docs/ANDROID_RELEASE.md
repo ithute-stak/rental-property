@@ -85,10 +85,33 @@ The workflow will:
 4. inject the Mosala application ID, app label, Internet permission, Maps key placeholder, and upload-key signing configuration;
 5. build a signed release `.aab` against the production API URL;
 6. verify the bundle signature;
-7. generate a SHA-256 checksum; and
-8. upload the `.aab` and checksum as a 30-day workflow artifact.
+7. generate a SHA-256 checksum;
+8. create a GitHub/Sigstore build-provenance attestation for the exact `.aab`; and
+9. upload the `.aab` and checksum as a 30-day workflow artifact.
 
 The workflow does **not** automatically publish to Google Play. Keeping bundle generation and store publication separate gives Mosala a final approval point before a release reaches users.
+
+## Verify production bundle provenance
+
+The production workflow uses GitHub artifact attestations to cryptographically bind the generated `.aab` to the repository, commit and workflow that produced it. This is separate from Android/JAR signing: both checks should pass for a production candidate.
+
+After downloading `app-release.aab` from the production workflow artifact, verify the GitHub provenance with GitHub CLI:
+
+```bash
+gh attestation verify app-release.aab -R ithute-stak/rental-property
+```
+
+For a stricter release check, require the expected production workflow as the signer:
+
+```bash
+gh attestation verify app-release.aab \
+  -R ithute-stak/rental-property \
+  --signer-workflow ithute-stak/rental-property/.github/workflows/android-release.yml
+```
+
+The verification result should identify the expected repository/workflow and the commit used to create the artifact. Record that commit and the `.aab` SHA-256 in the Android release-acceptance issue before approving a Play Store upload.
+
+An attestation proves where and how an artifact was built; it does not replace code review, automated tests, Android signature verification, physical-device testing, or Mosala's final release approval.
 
 ## CI release-smoke builds
 
