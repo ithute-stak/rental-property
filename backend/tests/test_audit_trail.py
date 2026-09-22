@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import DBAPIError
 
-from app.core.database import SessionFactory
+from app.core.database import SessionFactory, engine
 from app.core.request_context import current_request_id
 from app.main import app
 from app.models.audit import AuditEvent
@@ -54,3 +54,6 @@ async def test_audit_events_redact_sensitive_details_and_are_append_only() -> No
             assert persisted.action == "test.audit_created"
     finally:
         current_request_id.reset(request_token)
+        # This test talks to asyncpg directly on pytest's event loop. Clear the
+        # pool before later TestClient cases open their own application loop.
+        await engine.dispose()
