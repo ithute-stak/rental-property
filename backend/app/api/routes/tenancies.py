@@ -11,6 +11,7 @@ from app.models.booking import Booking, BookingStatus, BookingStatusHistory, Not
 from app.models.rental import Property, Unit, UnitStatus, User, UserRole
 from app.models.tenancy import Tenancy, TenancyStatus
 from app.schemas.tenancy import TenantNoticeCreate, TenancyActivateRequest, TenancyRead
+from app.services.audit import add_audit_event
 
 router = APIRouter()
 
@@ -154,6 +155,9 @@ async def activate_tenancy(
     if tenant is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booked tenant account is missing")
 
+    previous_booking_status = booking.status
+    previous_unit_status = unit.status
+    previous_tenant_role = tenant.role
     tenancy = Tenancy(
         booking_id=booking.id,
         unit_id=unit.id,
@@ -165,7 +169,6 @@ async def activate_tenancy(
     db.add(tenancy)
     await db.flush()
 
-    previous_booking_status = booking.status
     booking.status = BookingStatus.FULFILLED.value
     db.add(
         BookingStatusHistory(
@@ -188,6 +191,26 @@ async def activate_tenancy(
         f"You are now checked in to {unit.name} at {property_row.title}.",
         tenancy_id=str(tenancy.id),
         property_id=str(property_row.id),
+    )
+    add_audit_event(
+        db,
+        actor=user,
+        action="tenancy.activated",
+        entity_type="tenancy",
+        entity_id=tenancy.id,
+        details={
+            "booking_id": booking.id,
+            "property_id": property_row.id,
+            "unit_id": unit.id,
+            "tenant_id": tenant.id,
+            "booking_from_status": previous_booking_status,
+            "booking_to_status": booking.status,
+            "unit_from_status": previous_unit_status,
+            "unit_to_status": unit.status,
+            "tenant_from_role": previous_tenant_role,
+            "tenant_to_role": tenant.role,
+            "start_date": tenancy.start_date,
+        },
     )
     await db.commit()
     await db.refresh(tenancy)
@@ -243,6 +266,8 @@ async def give_notice(
         )
 
     unit, property_row = await _property_for_tenancy(db, tenancy)
+    previous_tenancy_status = tenancy.status
+    previous_unit_status = unit.status
     tenancy.status = TenancyStatus.NOTICE_GIVEN.value
     tenancy.notice_given_at = _now()
     tenancy.expected_move_out = payload.expected_move_out
@@ -272,6 +297,24 @@ async def give_notice(
         f"Your expected move-out date is {payload.expected_move_out.isoformat()}.",
         tenancy_id=str(tenancy.id),
     )
+    add_audit_event(
+        db,
+        actor=user,
+        action="tenancy.notice_given",
+        entity_type="tenancy",
+        entity_id=tenancy.id,
+        details={
+            "property_id": property_row.id,
+            "unit_id": unit.id,
+            "from_status": previous_tenancy_status,
+            "to_status": tenancy.status,
+            "unit_from_status": previous_unit_status,
+            "unit_to_status": unit.status,
+            "expected_move_out": tenancy.expected_move_out,
+            "available_from": unit.available_from,
+            "allow_readvertise": tenancy.allow_readvertise,
+        },
+    )
     await db.commit()
     await db.refresh(tenancy)
     return await _read(db, tenancy)
@@ -289,6 +332,8 @@ async def end_tenancy(
     unit, property_row = await _property_for_tenancy(db, tenancy)
     _require_property_access(property_row, user)
 
+    previous_tenancy_status = tenancy.status
+    previous_unit_status = unit.status
     tenancy.status = TenancyStatus.ENDED.value
     tenancy.ended_at = _now()
     tenancy.inspection_completed_at = None
@@ -302,6 +347,23 @@ async def end_tenancy(
         "Move-out recorded",
         f"Your tenancy for {unit.name} at {property_row.title} has been marked as ended.",
         tenancy_id=str(tenancy.id),
+    )
+    add_audit_event(
+        db,
+        actor=user,
+        action="tenancy.ended",
+        entity_type="tenancy",
+        entity_id=tenancy.id,
+        details={
+            "property_id": property_row.id,
+            "unit_id": unit.id,
+            "tenant_id": tenancy.tenant_id,
+            "from_status": previous_tenancy_status,
+            "to_status": tenancy.status,
+            "unit_from_status": previous_unit_status,
+            "unit_to_status": unit.status,
+            "ended_at": tenancy.ended_at,
+        },
     )
     await db.commit()
     await db.refresh(tenancy)
@@ -323,12 +385,30 @@ async def complete_inspection(
             detail="End the tenancy before completing inspection",
         )
 
+    previous_unit_status = unit.status
+    previously_completed = tenancy.inspection_completed_at is not None
     if tenancy.inspection_completed_at is None:
         tenancy.inspection_completed_at = _now()
     if unit.status == UnitStatus.INSPECTION.value:
         unit.status = UnitStatus.AVAILABLE.value
         unit.available_from = date.today()
 
+    if not previously_completed:
+        add_audit_event(
+            db,
+            actor=user,
+            action="tenancy.inspection_completed",
+            entity_type="tenancy",
+            entity_id=tenancy.id,
+            details={
+                "property_id": property_row.id,
+                "unit_id": unit.id,
+                "unit_from_status": previous_unit_status,
+                "unit_to_status": unit.status,
+                "inspection_completed_at": tenancy.inspection_completed_at,
+                "available_from": unit.available_from,
+            },
+        )
     await db.commit()
     await db.refresh(tenancy)
     return await _read(db, tenancy)
