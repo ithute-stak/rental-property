@@ -80,6 +80,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -93,3 +97,27 @@ jobs:
       - name: Run Flutter tests
         working-directory: mobile
         run: flutter test
+      - name: Generate ephemeral Android runner
+        working-directory: mobile
+        run: >-
+          flutter create
+          --platforms=android
+          --org ls.co.mosala
+          --project-name rental_property
+          --no-pub
+          .
+      - name: Build Android release smoke APK
+        working-directory: mobile
+        run: >-
+          flutter build apk
+          --release
+          --dart-define=API_BASE_URL=https://api.example.invalid/api/v1
+      - name: Verify Android release APK
+        run: test -s mobile/build/app/outputs/flutter-apk/app-release.apk
+      - name: Upload Android release smoke APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mosala-rentals-android-${{ github.sha }}
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
