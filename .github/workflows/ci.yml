@@ -96,6 +96,7 @@ jobs:
 
   android-acceptance:
     name: android acceptance APK
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
