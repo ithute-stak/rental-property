@@ -18,6 +18,11 @@ on:
         required: true
         default: 'ls.co.mosala.rentals'
         type: string
+      publish_to_google_play:
+        description: Publish this verified bundle to the Google Play internal track after building it.
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -52,6 +57,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           set -euo pipefail
           [[ "${{ inputs.version_name }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
@@ -77,6 +83,16 @@ jobs:
               missing=1
             fi
           done
+          if [ "${{ inputs.publish_to_google_play }}" = "true" ]; then
+            if [ "${{ inputs.application_id }}" != "ls.co.mosala.rentals" ]; then
+              echo "::error::automated Play publishing is locked to ls.co.mosala.rentals"
+              missing=1
+            fi
+            if [ -z "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
+              echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is required when publish_to_google_play is enabled"
+              missing=1
+            fi
+          fi
           test "$missing" -eq 0
 
       - name: Install Flutter dependencies
@@ -166,3 +182,32 @@ jobs:
             mobile/build/app/outputs/bundle/release/app-release.aab.sha256
           if-no-files-found: error
           retention-days: 30
+
+      - name: Install Google Play publishing dependencies
+        if: ${{ inputs.publish_to_google_play }}
+        run: python3 -m pip install --disable-pip-version-check --no-cache-dir google-auth requests
+
+      - name: Publish verified bundle to Google Play internal track
+        id: play_publish
+        if: ${{ inputs.publish_to_google_play }}
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: >-
+          python3 mobile/tool/publish_google_play.py
+          --bundle mobile/build/app/outputs/bundle/release/app-release.aab
+          --application-id "${{ inputs.application_id }}"
+          --release-name "Mosala Rentals ${{ inputs.version_name }} (${{ inputs.version_code }})"
+          --expected-version-code "${{ inputs.version_code }}"
+
+      - name: Summarize Google Play internal release
+        if: ${{ inputs.publish_to_google_play }}
+        shell: bash
+        run: |
+          {
+            echo "### Google Play internal release"
+            echo ""
+            echo "- Application ID: `${{ inputs.application_id }}`"
+            echo "- Track: `internal`"
+            echo "- Uploaded version code: `${{ steps.play_publish.outputs.version_code }}`"
+            echo "- Requested version: `${{ inputs.version_name }} (${{ inputs.version_code }})`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -91,6 +91,9 @@ jobs:
       - name: Install Flutter dependencies
         working-directory: mobile
         run: flutter pub get
+      - name: Validate Android release helper scripts
+        working-directory: mobile
+        run: python3 -m py_compile tool/prepare_android_release.py tool/publish_google_play.py
       - name: Analyze Flutter
         working-directory: mobile
         run: flutter analyze
