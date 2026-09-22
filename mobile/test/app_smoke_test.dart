@@ -61,7 +61,13 @@ class _FakeTokenStore implements TokenStore {
   Future<String?> read() async => null;
 
   @override
+  Future<String?> readRefresh() async => null;
+
+  @override
   Future<void> write(String token) async {}
+
+  @override
+  Future<void> writeTokens({required String accessToken, required String refreshToken}) async {}
 }
 
 void main() {
