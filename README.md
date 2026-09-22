@@ -22,7 +22,7 @@ The product follows the full rental lifecycle:
 ```text
 backend/     FastAPI API, workers, models, migrations and tests
 mobile/      Flutter client
-docs/        architecture and delivery roadmap
+docs/        architecture, roadmap and production runbooks
 ```
 
 ## Local backend
@@ -35,13 +35,26 @@ make migrate
 make api-run
 ```
 
-FastAPI is available at `http://localhost:8000`; health is `GET /api/v1/health` and OpenAPI is available at `/docs`.
+FastAPI is available at `http://localhost:8000`; process liveness is `GET /api/v1/health/live`, dependency readiness is `GET /api/v1/health/ready`, and the legacy `GET /api/v1/health` endpoint remains available. OpenAPI is at `/docs`.
 
 For the complete local infrastructure, including MinIO, migrations and the maintenance worker:
 
 ```bash
 docker compose up -d
 ```
+
+## Production baseline
+
+A separate production Compose baseline keeps PostgreSQL and Redis off public host ports and binds FastAPI only to `127.0.0.1:8000` for an HTTPS reverse proxy:
+
+```bash
+cp .env.production.example .env.production
+# Replace every placeholder before continuing.
+docker compose --env-file .env.production -f docker-compose.production.yml config
+docker compose --env-file .env.production -f docker-compose.production.yml build
+```
+
+See `docs/PRODUCTION_DEPLOYMENT.md` before deploying. It covers secrets, database backups, migrations, health verification, administrator provisioning, monitoring and rollback expectations.
 
 ## Provision the first Mosala administrator
 
@@ -54,7 +67,7 @@ mosala-provision-admin --phone YOUR_ADMIN_PHONE --name "Mosala Administrator"
 
 The command securely prompts for the password without requiring it on the command line. An email can be supplied with `--email`. If a matching account already exists, the command refuses to change it unless `--update-existing` is supplied deliberately.
 
-With the Compose backend image, the same command can be run through the migration service:
+With the development Compose backend image, the same command can be run through the migration service:
 
 ```bash
 docker compose run --rm migrate mosala-provision-admin \
@@ -95,11 +108,12 @@ Do not regenerate `lib/` when adding platform runners.
 - admin marketplace analytics and landlord portfolio analytics
 - automatic unpaid-booking expiry and upcoming-viewing reminders
 - production-safe worker locking and production-secret validation
+- separate liveness/readiness health probes for production orchestration
 
 ## Validation
 
-CI compiles the backend, applies the complete Alembic migration chain to PostgreSQL/PostGIS, runs backend tests, builds the backend Docker image, runs Flutter analysis and executes Flutter tests.
+CI validates both development and production Compose configuration, compiles the backend, applies the complete Alembic migration chain to PostgreSQL/PostGIS, runs backend tests, builds the backend Docker image, runs Flutter analysis and executes Flutter tests.
 
 Live payment-provider settlement and external push/WebSocket delivery are intentionally not simulated; those are integration slices that require the selected production providers and credentials.
 
-See `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` for the wider system design and delivery plan.
+See `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and `docs/PRODUCTION_DEPLOYMENT.md` for the wider system design and operational guidance.
