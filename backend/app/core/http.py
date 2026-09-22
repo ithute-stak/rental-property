@@ -5,6 +5,8 @@ import uuid
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.core.request_context import current_request_id
+
 logger = logging.getLogger("mosala.http")
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
 
@@ -29,6 +31,7 @@ class RequestContextMiddleware:
             else uuid.uuid4().hex
         )
         scope.setdefault("state", {})["request_id"] = request_id
+        context_token = current_request_id.set(request_id)
 
         method = scope.get("method", "")
         path = scope.get("path", "")
@@ -58,6 +61,7 @@ class RequestContextMiddleware:
         try:
             await self.app(scope, receive, send_with_headers)
         finally:
+            current_request_id.reset(context_token)
             duration_ms = (time.perf_counter() - started) * 1000
             logger.info(
                 "request_id=%s method=%s path=%s status=%s duration_ms=%.2f",
