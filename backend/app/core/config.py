@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,10 +24,30 @@ class Settings(BaseSettings):
     media_upload_expiry_seconds: int = 900
     object_storage_verify_uploads: bool = True
     maintenance_interval_seconds: int = 60
-    maintenance_lock_seconds: int = 55
+    maintenance_lock_seconds: int = 300
     viewing_reminder_hours: int = 24
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @model_validator(mode="after")
+    def validate_runtime_safety(self):
+        origins = self.cors_origin_list
+        if "*" in origins:
+            raise ValueError("CORS_ORIGINS cannot use '*' when authenticated requests are enabled")
+
+        if self.app_env.strip().lower() == "production":
+            if (
+                self.auth_secret_key == "change-this-secret-before-production"
+                or len(self.auth_secret_key) < 32
+            ):
+                raise ValueError(
+                    "AUTH_SECRET_KEY must be replaced with a strong production secret of at least 32 characters"
+                )
+            if self.object_storage_secret_key == "rental-development-secret":
+                raise ValueError(
+                    "OBJECT_STORAGE_SECRET_KEY must be replaced before production startup"
+                )
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

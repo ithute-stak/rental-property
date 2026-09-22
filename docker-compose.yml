@@ -72,7 +72,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://rental:rental@db:5432/rental_property
       REDIS_URL: redis://redis:6379/0
       MAINTENANCE_INTERVAL_SECONDS: 60
-      MAINTENANCE_LOCK_SECONDS: 55
+      MAINTENANCE_LOCK_SECONDS: 300
       VIEWING_REMINDER_HOURS: 24
     depends_on:
       migrate:
