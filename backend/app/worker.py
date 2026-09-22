@@ -32,15 +32,10 @@ async def run_cycle() -> MaintenanceResult | None:
 
     try:
         async with SessionFactory() as db:
-            result = await run_maintenance(
+            return await run_maintenance(
                 db,
                 viewing_reminder_hours=settings.viewing_reminder_hours,
             )
-            published = await publish_pending_notifications(db, redis)
-            await db.commit()
-            if published:
-                logger.info("Realtime notifications published=%s", published)
-            return result
     finally:
         try:
             await redis.eval(_RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
@@ -48,8 +43,16 @@ async def run_cycle() -> MaintenanceResult | None:
             logger.exception("Failed to release maintenance lock")
 
 
-async def run_forever() -> None:
-    logger.info("Mosala maintenance worker started")
+async def run_realtime_cycle() -> int:
+    redis = get_redis()
+    async with SessionFactory() as db:
+        published = await publish_pending_notifications(db, redis)
+        await db.commit()
+        return published
+
+
+async def run_maintenance_forever() -> None:
+    logger.info("Mosala maintenance loop started")
     while True:
         try:
             result = await run_cycle()
@@ -66,6 +69,27 @@ async def run_forever() -> None:
         except Exception:
             logger.exception("Maintenance cycle failed")
         await asyncio.sleep(settings.maintenance_interval_seconds)
+
+
+async def run_realtime_forever() -> None:
+    logger.info("Mosala realtime notification publisher started")
+    while True:
+        try:
+            published = await run_realtime_cycle()
+            if published:
+                logger.info("Realtime notifications published=%s", published)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Realtime notification publication failed")
+        await asyncio.sleep(settings.realtime_publish_interval_seconds)
+
+
+async def run_forever() -> None:
+    await asyncio.gather(
+        run_maintenance_forever(),
+        run_realtime_forever(),
+    )
 
 
 def main() -> None:
