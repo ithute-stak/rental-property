@@ -83,9 +83,15 @@ jobs:
               missing=1
             fi
           done
-          if [ "${{ inputs.publish_to_google_play }}" = "true" ] && [ -z "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
-            echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is required when publish_to_google_play is enabled"
-            missing=1
+          if [ "${{ inputs.publish_to_google_play }}" = "true" ]; then
+            if [ "${{ inputs.application_id }}" != "ls.co.mosala.rentals" ]; then
+              echo "::error::automated Play publishing is locked to ls.co.mosala.rentals"
+              missing=1
+            fi
+            if [ -z "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
+              echo "::error::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is required when publish_to_google_play is enabled"
+              missing=1
+            fi
           fi
           test "$missing" -eq 0
 
@@ -191,6 +197,7 @@ jobs:
           --bundle mobile/build/app/outputs/bundle/release/app-release.aab
           --application-id "${{ inputs.application_id }}"
           --release-name "Mosala Rentals ${{ inputs.version_name }} (${{ inputs.version_code }})"
+          --expected-version-code "${{ inputs.version_code }}"
 
       - name: Summarize Google Play internal release
         if: ${{ inputs.publish_to_google_play }}
