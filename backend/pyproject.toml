@@ -37,6 +37,9 @@ exclude = ["alembic*", "tests*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+  "acceptance: end-to-end business lifecycle tests that require migrated PostgreSQL and Redis"
+]
 
 [tool.ruff]
 line-length = 100
