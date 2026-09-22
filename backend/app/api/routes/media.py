@@ -41,7 +41,10 @@ async def _validate_unit(db: AsyncSession, property_id: uuid.UUID, unit_id: uuid
         return
     unit = await db.scalar(select(Unit.id).where(Unit.id == unit_id, Unit.property_id == property_id))
     if unit is None:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unit does not belong to this property")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unit does not belong to this property",
+        )
 
 
 def _read(media: PropertyMedia) -> PropertyMediaRead:
@@ -92,7 +95,10 @@ async def confirm_upload(
 
     expected_prefix = f"properties/{property_id}/"
     if not payload.object_key.startswith(expected_prefix):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid property media key")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid property media key",
+        )
 
     if settings.object_storage_verify_uploads:
         exists = await asyncio.to_thread(storage.object_exists, payload.object_key)
@@ -102,9 +108,14 @@ async def confirm_upload(
                 detail="The image has not been uploaded to object storage",
             )
 
-    existing = await db.scalar(select(PropertyMedia.id).where(PropertyMedia.object_key == payload.object_key))
+    existing = await db.scalar(
+        select(PropertyMedia.id).where(PropertyMedia.object_key == payload.object_key)
+    )
     if existing is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Media has already been confirmed")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Media has already been confirmed",
+        )
 
     media_count = await db.scalar(
         select(func.count(PropertyMedia.id)).where(PropertyMedia.property_id == property_id)
@@ -151,6 +162,37 @@ async def list_media(
     return [_read(media) for media in rows]
 
 
+@router.put("/{property_id}/media/{media_id}/cover", response_model=PropertyMediaRead)
+async def set_cover_media(
+    property_id: uuid.UUID,
+    media_id: uuid.UUID,
+    user: User = Depends(require_roles(UserRole.LANDLORD.value, UserRole.ADMIN.value)),
+    db: AsyncSession = Depends(get_db),
+) -> PropertyMediaRead:
+    property_row = await _property_or_404(db, property_id)
+    _ensure_owner_or_admin(property_row, user)
+    _ensure_media_editable(property_row)
+
+    media = await db.scalar(
+        select(PropertyMedia).where(
+            PropertyMedia.id == media_id,
+            PropertyMedia.property_id == property_id,
+        )
+    )
+    if media is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
+    await db.execute(
+        update(PropertyMedia)
+        .where(PropertyMedia.property_id == property_id)
+        .values(is_cover=False)
+    )
+    media.is_cover = True
+    await db.commit()
+    await db.refresh(media)
+    return _read(media)
+
+
 @router.delete("/{property_id}/media/{media_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_media(
     property_id: uuid.UUID,
@@ -163,11 +205,28 @@ async def delete_media(
     _ensure_media_editable(property_row)
 
     media = await db.scalar(
-        select(PropertyMedia).where(PropertyMedia.id == media_id, PropertyMedia.property_id == property_id)
+        select(PropertyMedia).where(
+            PropertyMedia.id == media_id,
+            PropertyMedia.property_id == property_id,
+        )
     )
     if media is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
 
-    await asyncio.to_thread(storage.delete, media.object_key)
+    was_cover = media.is_cover
+    object_key = media.object_key
     await db.delete(media)
+    await db.flush()
+
+    if was_cover:
+        replacement = await db.scalar(
+            select(PropertyMedia)
+            .where(PropertyMedia.property_id == property_id)
+            .order_by(PropertyMedia.sort_order, PropertyMedia.created_at)
+            .limit(1)
+        )
+        if replacement is not None:
+            replacement.is_cover = True
+
     await db.commit()
+    await asyncio.to_thread(storage.delete, object_key)
