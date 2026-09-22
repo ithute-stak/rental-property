@@ -1,13 +1,18 @@
 from decimal import Decimal
 
+from fastapi.testclient import TestClient
+
 from app.main import app
 from app.schemas.analytics import AdminAnalyticsOverview, LandlordAnalyticsOverview
 
 
-def test_analytics_routes_are_registered():
-    paths = {route.path for route in app.routes}
-    assert "/api/v1/analytics/admin/overview" in paths
-    assert "/api/v1/analytics/landlord/overview" in paths
+def test_analytics_routes_are_registered_and_protected():
+    with TestClient(app) as client:
+        admin_response = client.get("/api/v1/analytics/admin/overview")
+        landlord_response = client.get("/api/v1/analytics/landlord/overview")
+
+    assert admin_response.status_code == 401
+    assert landlord_response.status_code == 401
 
 
 def test_admin_analytics_money_fields_remain_decimal():
