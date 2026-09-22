@@ -8,13 +8,28 @@ import 'package:rental_property/features/booking/data/api_booking_repository.dar
 import 'package:rental_property/features/booking/presentation/booking_screens.dart';
 import 'package:rental_property/features/engagement/data/api_engagement_repository.dart';
 import 'package:rental_property/features/engagement/presentation/engagement_screens.dart';
+import 'package:rental_property/features/feed/domain/feed_filters.dart';
 import 'package:rental_property/features/feed/domain/property_summary.dart';
 import 'package:rental_property/features/feed/presentation/bloc/feed_bloc.dart';
+import 'package:rental_property/features/feed/presentation/feed_filter_sheet.dart';
 import 'package:rental_property/features/notifications/data/api_notification_repository.dart';
 import 'package:rental_property/features/notifications/presentation/notifications_screen.dart';
 
 class FeedScreen extends StatelessWidget {
   const FeedScreen({super.key});
+
+  Future<void> _openFilters(BuildContext context) async {
+    final bloc = context.read<FeedBloc>();
+    final filters = await showModalBottomSheet<FeedFilters>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => FeedFilterSheet(initial: bloc.filters),
+    );
+    if (filters != null && context.mounted) {
+      bloc.add(FeedRequested(filters: filters));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +135,21 @@ class FeedScreen extends StatelessWidget {
               onSubmitted: (value) {
                 context.read<FeedBloc>().add(FeedRequested(query: value));
               },
-              trailing: [IconButton(onPressed: () {}, icon: const Icon(Icons.tune_rounded))],
+              trailing: [
+                BlocBuilder<FeedBloc, FeedState>(
+                  builder: (context, _) {
+                    final hasFilters = !context.read<FeedBloc>().filters.isEmpty;
+                    return Badge(
+                      isLabelVisible: hasFilters,
+                      child: IconButton(
+                        tooltip: 'Search filters',
+                        onPressed: () => _openFilters(context),
+                        icon: const Icon(Icons.tune_rounded),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
           Expanded(
