@@ -8,6 +8,8 @@ import 'package:rental_property/features/booking/data/api_booking_repository.dar
 import 'package:rental_property/features/booking/presentation/booking_screens.dart';
 import 'package:rental_property/features/feed/domain/property_summary.dart';
 import 'package:rental_property/features/feed/presentation/bloc/feed_bloc.dart';
+import 'package:rental_property/features/notifications/data/api_notification_repository.dart';
+import 'package:rental_property/features/notifications/presentation/notifications_screen.dart';
 
 class FeedScreen extends StatelessWidget {
   const FeedScreen({super.key});
@@ -25,7 +27,27 @@ class FeedScreen extends StatelessWidget {
           ],
         ),
         actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.notifications_none_rounded)),
+          BlocBuilder<SessionCubit, SessionState>(
+            builder: (context, state) => IconButton(
+              tooltip: 'Notifications',
+              onPressed: () {
+                if (state is SessionAuthenticated) {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => NotificationsScreen(
+                        repository: ApiNotificationRepository.fromEnvironment(),
+                      ),
+                    ),
+                  );
+                } else {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(builder: (_) => const AccountScreen()),
+                  );
+                }
+              },
+              icon: const Icon(Icons.notifications_none_rounded),
+            ),
+          ),
           BlocBuilder<SessionCubit, SessionState>(
             builder: (context, state) => IconButton(
               tooltip: state is SessionAuthenticated ? 'My account' : 'Sign in',
