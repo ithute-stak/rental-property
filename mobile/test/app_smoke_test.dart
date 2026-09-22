@@ -51,6 +51,9 @@ class _FakeAuthRepository implements AuthRepository {
 
   @override
   Future<void> logout() async {}
+
+  @override
+  Future<void> logoutAll() async {}
 }
 
 class _FakeTokenStore implements TokenStore {
