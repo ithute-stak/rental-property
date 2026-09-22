@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.core.database import SessionFactory
 from app.core.redis import get_redis
 from app.services.maintenance import MaintenanceResult, run_maintenance
+from app.services.realtime import publish_pending_notifications
 
 logger = logging.getLogger("mosala.worker")
 LOCK_KEY = "mosala:maintenance:lock"
@@ -31,10 +32,15 @@ async def run_cycle() -> MaintenanceResult | None:
 
     try:
         async with SessionFactory() as db:
-            return await run_maintenance(
+            result = await run_maintenance(
                 db,
                 viewing_reminder_hours=settings.viewing_reminder_hours,
             )
+            published = await publish_pending_notifications(db, redis)
+            await db.commit()
+            if published:
+                logger.info("Realtime notifications published=%s", published)
+            return result
     finally:
         try:
             await redis.eval(_RELEASE_LOCK_SCRIPT, 1, LOCK_KEY, lock_token)
