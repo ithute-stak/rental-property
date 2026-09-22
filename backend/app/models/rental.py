@@ -18,6 +18,13 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
 
 
+class VerificationStatus(str, enum.Enum):
+    NOT_SUBMITTED = "not_submitted"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class PropertyStatus(str, enum.Enum):
     DRAFT = "draft"
     PENDING_VERIFICATION = "pending_verification"
@@ -46,10 +53,42 @@ class User(Base):
     phone: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     display_name: Mapped[str] = mapped_column(String(160), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     properties: Mapped[list["Property"]] = relationship(back_populates="owner")
+    landlord_profile: Mapped["LandlordProfile | None"] = relationship(
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class LandlordProfile(Base):
+    __tablename__ = "landlord_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    business_name: Mapped[str | None] = mapped_column(String(180))
+    physical_address: Mapped[str | None] = mapped_column(String(500))
+    verification_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=VerificationStatus.NOT_SUBMITTED.value,
+        index=True,
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped[User] = relationship(back_populates="landlord_profile")
 
 
 class Property(Base):
@@ -68,7 +107,10 @@ class Property(Base):
     area: Mapped[str | None] = mapped_column(String(120))
     latitude: Mapped[Decimal] = mapped_column(Numeric(9, 6), nullable=False)
     longitude: Mapped[Decimal] = mapped_column(Numeric(9, 6), nullable=False)
-    location: Mapped[object] = mapped_column(Geography(geometry_type="POINT", srid=4326, spatial_index=True), nullable=False)
+    location: Mapped[object] = mapped_column(
+        Geography(geometry_type="POINT", srid=4326, spatial_index=True),
+        nullable=False,
+    )
     total_rooms: Mapped[int] = mapped_column(nullable=False)
     security_level: Mapped[str] = mapped_column(String(40), nullable=False)
     security_features: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

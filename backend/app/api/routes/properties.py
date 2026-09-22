@@ -1,22 +1,75 @@
+import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from geoalchemy2 import Geography
 from geoalchemy2.elements import WKTElement
 from sqlalchemy import cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_optional_user, require_roles
 from app.core.database import get_db
-from app.models.rental import Property, PropertyStatus
-from app.schemas.property import PropertyCreate, PropertyRead
+from app.models.rental import (
+    LandlordProfile,
+    Property,
+    PropertyStatus,
+    Unit,
+    UnitStatus,
+    User,
+    UserRole,
+    VerificationStatus,
+)
+from app.schemas.property import (
+    PropertyCreate,
+    PropertyRead,
+    PropertyUpdate,
+    UnitCreate,
+    UnitRead,
+    UnitUpdate,
+)
 
 router = APIRouter()
 
 
+def _search_point(latitude: Decimal, longitude: Decimal):
+    return cast(
+        func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326),
+        Geography(geometry_type="POINT", srid=4326),
+    )
+
+
+async def _property_or_404(db: AsyncSession, property_id: uuid.UUID) -> Property:
+    row = await db.get(Property, property_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+    return row
+
+
+def _ensure_owner_or_admin(row: Property, user: User) -> None:
+    if row.owner_id != user.id and user.role != UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this property",
+        )
+
+
+def _ensure_editable(row: Property) -> None:
+    if row.status not in {PropertyStatus.DRAFT.value, PropertyStatus.REJECTED.value}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only draft or rejected properties can be edited",
+        )
+
+
 @router.post("", response_model=PropertyRead, status_code=status.HTTP_201_CREATED)
-async def create_property(payload: PropertyCreate, db: AsyncSession = Depends(get_db)) -> Property:
+async def create_property(
+    payload: PropertyCreate,
+    user: User = Depends(require_roles(UserRole.LANDLORD.value)),
+    db: AsyncSession = Depends(get_db),
+) -> Property:
     property_row = Property(
         **payload.model_dump(exclude={"latitude", "longitude"}),
+        owner_id=user.id,
         latitude=payload.latitude,
         longitude=payload.longitude,
         location=WKTElement(f"POINT({payload.longitude} {payload.latitude})", srid=4326),
@@ -38,19 +91,19 @@ async def list_properties(
     limit: int = Query(default=30, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[Property]:
-    query = select(Property).where(
-        Property.status.in_([PropertyStatus.APPROVED.value, PropertyStatus.ACTIVE.value])
-    )
+    query = select(Property).where(Property.status == PropertyStatus.ACTIVE.value)
 
     if district:
         query = query.where(func.lower(Property.district) == district.lower())
     if town:
         query = query.where(func.lower(Property.town) == town.lower())
-    if latitude is not None and longitude is not None:
-        search_point = cast(
-            func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326),
-            Geography(geometry_type="POINT", srid=4326),
+    if (latitude is None) != (longitude is None):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Latitude and longitude must be supplied together",
         )
+    if latitude is not None and longitude is not None:
+        search_point = _search_point(latitude, longitude)
         distance_metres = float(radius_km) * 1000
         query = query.where(func.ST_DWithin(Property.location, search_point, distance_metres))
         query = query.order_by(func.ST_Distance(Property.location, search_point))
@@ -59,3 +112,170 @@ async def list_properties(
 
     rows = await db.scalars(query.limit(limit))
     return list(rows)
+
+
+@router.get("/mine", response_model=list[PropertyRead])
+async def list_my_properties(
+    user: User = Depends(require_roles(UserRole.LANDLORD.value)),
+    db: AsyncSession = Depends(get_db),
+) -> list[Property]:
+    rows = await db.scalars(
+        select(Property).where(Property.owner_id == user.id).order_by(Property.created_at.desc())
+    )
+    return list(rows)
+
+
+@router.get("/{property_id}", response_model=PropertyRead)
+async def get_property(
+    property_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+) -> Property:
+    row = await _property_or_404(db, property_id)
+    if row.status != PropertyStatus.ACTIVE.value:
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+        _ensure_owner_or_admin(row, user)
+    return row
+
+
+@router.patch("/{property_id}", response_model=PropertyRead)
+async def update_property(
+    property_id: uuid.UUID,
+    payload: PropertyUpdate,
+    user: User = Depends(require_roles(UserRole.LANDLORD.value, UserRole.ADMIN.value)),
+    db: AsyncSession = Depends(get_db),
+) -> Property:
+    row = await _property_or_404(db, property_id)
+    _ensure_owner_or_admin(row, user)
+    _ensure_editable(row)
+
+    changes = payload.model_dump(exclude_unset=True)
+    latitude = changes.pop("latitude", None)
+    longitude = changes.pop("longitude", None)
+    for key, value in changes.items():
+        setattr(row, key, value)
+
+    if latitude is not None or longitude is not None:
+        new_latitude = latitude if latitude is not None else row.latitude
+        new_longitude = longitude if longitude is not None else row.longitude
+        row.latitude = new_latitude
+        row.longitude = new_longitude
+        row.location = WKTElement(f"POINT({new_longitude} {new_latitude})", srid=4326)
+
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@router.post("/{property_id}/units", response_model=UnitRead, status_code=status.HTTP_201_CREATED)
+async def create_unit(
+    property_id: uuid.UUID,
+    payload: UnitCreate,
+    user: User = Depends(require_roles(UserRole.LANDLORD.value, UserRole.ADMIN.value)),
+    db: AsyncSession = Depends(get_db),
+) -> Unit:
+    row = await _property_or_404(db, property_id)
+    _ensure_owner_or_admin(row, user)
+    _ensure_editable(row)
+
+    unit = Unit(
+        property_id=row.id,
+        name=payload.name,
+        monthly_rent=payload.monthly_rent,
+        deposit=payload.deposit,
+        available_from=payload.available_from,
+        status=UnitStatus.AVAILABLE.value,
+    )
+    db.add(unit)
+    await db.commit()
+    await db.refresh(unit)
+    return unit
+
+
+@router.get("/{property_id}/units", response_model=list[UnitRead])
+async def list_units(
+    property_id: uuid.UUID,
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[Unit]:
+    row = await _property_or_404(db, property_id)
+    if row.status != PropertyStatus.ACTIVE.value:
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+        _ensure_owner_or_admin(row, user)
+    units = await db.scalars(select(Unit).where(Unit.property_id == row.id).order_by(Unit.created_at))
+    return list(units)
+
+
+@router.patch("/{property_id}/units/{unit_id}", response_model=UnitRead)
+async def update_unit(
+    property_id: uuid.UUID,
+    unit_id: uuid.UUID,
+    payload: UnitUpdate,
+    user: User = Depends(require_roles(UserRole.LANDLORD.value, UserRole.ADMIN.value)),
+    db: AsyncSession = Depends(get_db),
+) -> Unit:
+    row = await _property_or_404(db, property_id)
+    _ensure_owner_or_admin(row, user)
+    _ensure_editable(row)
+
+    unit = await db.scalar(select(Unit).where(Unit.id == unit_id, Unit.property_id == property_id))
+    if unit is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unit not found")
+
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(unit, key, value)
+
+    await db.commit()
+    await db.refresh(unit)
+    return unit
+
+
+@router.delete("/{property_id}/units/{unit_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_unit(
+    property_id: uuid.UUID,
+    unit_id: uuid.UUID,
+    user: User = Depends(require_roles(UserRole.LANDLORD.value, UserRole.ADMIN.value)),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    row = await _property_or_404(db, property_id)
+    _ensure_owner_or_admin(row, user)
+    _ensure_editable(row)
+
+    unit = await db.scalar(select(Unit).where(Unit.id == unit_id, Unit.property_id == property_id))
+    if unit is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unit not found")
+
+    await db.delete(unit)
+    await db.commit()
+
+
+@router.post("/{property_id}/submit", response_model=PropertyRead)
+async def submit_property(
+    property_id: uuid.UUID,
+    user: User = Depends(require_roles(UserRole.LANDLORD.value)),
+    db: AsyncSession = Depends(get_db),
+) -> Property:
+    row = await _property_or_404(db, property_id)
+    _ensure_owner_or_admin(row, user)
+    _ensure_editable(row)
+
+    profile = await db.scalar(select(LandlordProfile).where(LandlordProfile.user_id == user.id))
+    if profile is None or profile.verification_status != VerificationStatus.APPROVED.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Landlord verification must be approved before submitting a property",
+        )
+
+    unit_count = await db.scalar(select(func.count(Unit.id)).where(Unit.property_id == row.id))
+    if not unit_count:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Add at least one rental unit before submitting the property",
+        )
+
+    row.status = PropertyStatus.PENDING_VERIFICATION.value
+    await db.commit()
+    await db.refresh(row)
+    return row

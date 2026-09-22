@@ -1,3 +1,3 @@
-from app.models.rental import Property, Unit, User
+from app.models.rental import LandlordProfile, Property, Unit, User
 
-__all__ = ["Property", "Unit", "User"]
+__all__ = ["LandlordProfile", "Property", "Unit", "User"]
