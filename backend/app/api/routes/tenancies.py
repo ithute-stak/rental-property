@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, require_roles
 from app.core.database import get_db
-from app.models.booking import Booking, BookingStatus, Notification
+from app.models.booking import Booking, BookingStatus, BookingStatusHistory, Notification
 from app.models.rental import Property, Unit, UnitStatus, User, UserRole
 from app.models.tenancy import Tenancy, TenancyStatus
 from app.schemas.tenancy import TenantNoticeCreate, TenancyActivateRequest, TenancyRead
@@ -59,6 +59,7 @@ async def _read(db: AsyncSession, tenancy: Tenancy) -> TenancyRead:
         start_date=tenancy.start_date,
         expected_move_out=tenancy.expected_move_out,
         allow_readvertise=tenancy.allow_readvertise,
+        inspection_completed_at=tenancy.inspection_completed_at,
         created_at=tenancy.created_at,
     )
 
@@ -94,12 +95,21 @@ async def activate_tenancy(
     booking = await db.scalar(select(Booking).where(Booking.id == payload.booking_id).with_for_update())
     if booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
-    if booking.status != BookingStatus.CONFIRMED.value:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only confirmed bookings can become tenancies")
 
     existing = await db.scalar(select(Tenancy).where(Tenancy.booking_id == booking.id))
     if existing is not None:
         return await _read(db, existing)
+
+    if booking.status != BookingStatus.CONFIRMED.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only confirmed bookings can become tenancies",
+        )
+    if booking.move_in_date > date.today():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Tenancy cannot start before the booked move-in date {booking.move_in_date.isoformat()}",
+        )
 
     unit = await db.scalar(select(Unit).where(Unit.id == booking.unit_id).with_for_update())
     if unit is None:
@@ -110,6 +120,35 @@ async def activate_tenancy(
     _require_property_access(property_row, user)
     if unit.status != UnitStatus.BOOKED.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unit is not in booked state")
+
+    live_tenancy = await db.scalar(
+        select(Tenancy.id)
+        .where(
+            Tenancy.unit_id == unit.id,
+            Tenancy.status.in_([TenancyStatus.ACTIVE.value, TenancyStatus.NOTICE_GIVEN.value]),
+        )
+        .limit(1)
+    )
+    if live_tenancy is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The previous tenancy must end before the next tenant can move in",
+        )
+
+    previous_tenancy = await db.scalar(
+        select(Tenancy)
+        .where(
+            Tenancy.unit_id == unit.id,
+            Tenancy.status == TenancyStatus.ENDED.value,
+        )
+        .order_by(Tenancy.ended_at.desc(), Tenancy.created_at.desc())
+        .limit(1)
+    )
+    if previous_tenancy is not None and previous_tenancy.inspection_completed_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Complete the previous move-out inspection before activating the next tenancy",
+        )
 
     tenant = await db.get(User, booking.seeker_id)
     if tenant is None:
@@ -125,6 +164,18 @@ async def activate_tenancy(
     )
     db.add(tenancy)
     await db.flush()
+
+    previous_booking_status = booking.status
+    booking.status = BookingStatus.FULFILLED.value
+    db.add(
+        BookingStatusHistory(
+            booking_id=booking.id,
+            from_status=previous_booking_status,
+            to_status=BookingStatus.FULFILLED.value,
+            actor_id=user.id,
+            note="Confirmed booking converted into an active tenancy",
+        )
+    )
     unit.status = UnitStatus.OCCUPIED.value
     if tenant.role == UserRole.HOUSE_SEEKER.value:
         tenant.role = UserRole.TENANT.value
@@ -159,7 +210,11 @@ async def list_landlord_tenancies(
     user: User = Depends(require_roles(UserRole.LANDLORD.value, UserRole.ADMIN.value)),
     db: AsyncSession = Depends(get_db),
 ) -> list[TenancyRead]:
-    query = select(Tenancy).join(Unit, Unit.id == Tenancy.unit_id).join(Property, Property.id == Unit.property_id)
+    query = (
+        select(Tenancy)
+        .join(Unit, Unit.id == Tenancy.unit_id)
+        .join(Property, Property.id == Unit.property_id)
+    )
     if user.role == UserRole.LANDLORD.value:
         query = query.where(Property.owner_id == user.id)
     rows = await db.scalars(query.order_by(Tenancy.created_at.desc()))
@@ -177,7 +232,10 @@ async def give_notice(
     if tenancy.tenant_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenancy access denied")
     if tenancy.status != TenancyStatus.ACTIVE.value:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Notice has already been given or tenancy has ended")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Notice has already been given or tenancy has ended",
+        )
     if payload.expected_move_out <= date.today():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -233,6 +291,7 @@ async def end_tenancy(
 
     tenancy.status = TenancyStatus.ENDED.value
     tenancy.ended_at = _now()
+    tenancy.inspection_completed_at = None
     if unit.status not in {UnitStatus.BOOKED.value, UnitStatus.BOOKING_PENDING.value}:
         unit.status = UnitStatus.INSPECTION.value
 
@@ -259,9 +318,17 @@ async def complete_inspection(
     unit, property_row = await _property_for_tenancy(db, tenancy)
     _require_property_access(property_row, user)
     if tenancy.status != TenancyStatus.ENDED.value:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="End the tenancy before completing inspection")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="End the tenancy before completing inspection",
+        )
+
+    if tenancy.inspection_completed_at is None:
+        tenancy.inspection_completed_at = _now()
     if unit.status == UnitStatus.INSPECTION.value:
         unit.status = UnitStatus.AVAILABLE.value
         unit.available_from = date.today()
-        await db.commit()
+
+    await db.commit()
+    await db.refresh(tenancy)
     return await _read(db, tenancy)

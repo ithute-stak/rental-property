@@ -103,7 +103,10 @@ async def admin_overview(
     confirmed_bookings_this_month = await _count(
         db,
         select(func.count(Booking.id)).where(
-            Booking.status == BookingStatus.CONFIRMED.value,
+            Booking.status.in_([
+                BookingStatus.CONFIRMED.value,
+                BookingStatus.FULFILLED.value,
+            ]),
             Booking.created_at >= month_start,
         ),
     )
@@ -222,7 +225,10 @@ async def landlord_overview(
         .join(Property, Property.id == Unit.property_id)
         .where(
             Property.owner_id == user.id,
-            Booking.status == BookingStatus.CONFIRMED.value,
+            Booking.status.in_([
+                BookingStatus.CONFIRMED.value,
+                BookingStatus.FULFILLED.value,
+            ]),
         ),
     )
     saved_homes = await _count(

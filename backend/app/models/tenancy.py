@@ -36,4 +36,5 @@ class Tenancy(Base):
     expected_move_out: Mapped[date | None] = mapped_column(Date)
     allow_readvertise: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    inspection_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

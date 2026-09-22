@@ -27,4 +27,5 @@ class TenancyRead(BaseModel):
     start_date: date
     expected_move_out: date | None
     allow_readvertise: bool
+    inspection_completed_at: datetime | None
     created_at: datetime

@@ -14,6 +14,7 @@ class BookingStatus(str, enum.Enum):
     PENDING_PAYMENT = "pending_payment"
     PAYMENT_REVIEW = "payment_review"
     CONFIRMED = "confirmed"
+    FULFILLED = "fulfilled"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
