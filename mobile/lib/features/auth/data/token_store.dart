@@ -109,7 +109,7 @@ class SecureTokenStore implements TokenStore {
         return fallbackAccessToken;
       }
       if (generation != _sessionGeneration) {
-        return _storage.read(key: _accessKey);
+        return await _storage.read(key: _accessKey);
       }
       await _writeTokensInternal(accessToken: access, refreshToken: refresh);
       return access;
