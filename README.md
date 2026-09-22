@@ -67,6 +67,12 @@ docker compose run --rm migrate mosala-provision-admin \
 
 Do not commit production credentials to this repository. When `APP_ENV=production`, the API refuses to start with the development JWT or object-storage secret defaults.
 
+## Mobile authentication sessions
+
+A successful login returns a short-lived JWT access token plus an opaque rotating refresh token. Only a SHA-256 hash of each refresh token is stored by the backend. The Flutter app keeps both credentials in secure storage and renews the access token automatically before expiry.
+
+Refresh credentials are one-time use: `/api/v1/auth/refresh` rotates the refresh token on every successful renewal. Reuse of an already-consumed or revoked refresh token is treated as possible credential theft and revokes that token family. `/api/v1/auth/logout` revokes the current refresh session and `/api/v1/auth/logout-all` signs the user out from every active device session. The default refresh lifetime is 30 days and is configurable with `REFRESH_TOKEN_DAYS`.
+
 ## Realtime notification protocol
 
 Authenticated clients connect to `/api/v1/realtime` and send the JWT in the first WebSocket frame rather than putting it in the URL:
@@ -75,7 +81,7 @@ Authenticated clients connect to `/api/v1/realtime` and send the JWT in the firs
 {"type":"authenticate","token":"<access-token>"}
 ```
 
-The backend persists notifications first, then the worker relays undelivered notification events through per-user Redis Pub/Sub channels. Delivery is intentionally at-least-once; the Flutter client deduplicates events by notification ID. Offline clients still retrieve the authoritative notification history through the REST endpoint.
+The backend persists notifications first, then the worker relays undelivered notification events through per-user Redis Pub/Sub channels. Delivery is intentionally at-least-once; the Flutter client deduplicates events by notification ID. Offline clients still retrieve the authoritative notification history through the REST endpoint. WebSocket reconnects use the same token store, so renewed access tokens are picked up automatically.
 
 ## Flutter
 
@@ -118,7 +124,8 @@ The complete VPS, TLS, update, backup, restore and rollback procedure is in `doc
 
 ## Implemented marketplace capabilities
 
-- JWT authentication and role-based access control
+- JWT authentication, rotating refresh sessions and role-based access control
+- secure mobile token storage, automatic access-token renewal and all-device logout
 - landlord profile verification and Mosala admin review
 - property/rental-unit separation and lifecycle management
 - property media upload, gallery and cover-image management
