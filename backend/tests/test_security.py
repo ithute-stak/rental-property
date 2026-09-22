@@ -2,8 +2,10 @@ import uuid
 
 from app.core.security import (
     create_access_token,
+    create_refresh_token,
     decode_access_token,
     hash_password,
+    hash_refresh_token,
     verify_password,
 )
 
@@ -25,3 +27,14 @@ def test_access_token_roundtrip():
 
     assert decoded_user_id == user_id
     assert role == "landlord"
+
+
+def test_refresh_tokens_are_random_and_only_hashes_need_persistence():
+    first = create_refresh_token()
+    second = create_refresh_token()
+
+    assert first != second
+    assert len(first) >= 64
+    assert len(hash_refresh_token(first)) == 64
+    assert hash_refresh_token(first) != first
+    assert hash_refresh_token(first) == hash_refresh_token(first)

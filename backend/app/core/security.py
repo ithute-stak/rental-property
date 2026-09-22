@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -44,3 +46,11 @@ def decode_access_token(token: str) -> tuple[uuid.UUID, str]:
     except (InvalidTokenError, KeyError, TypeError, ValueError) as exc:
         raise ValueError("Invalid or expired access token") from exc
     return subject, role
+
+
+def create_refresh_token() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

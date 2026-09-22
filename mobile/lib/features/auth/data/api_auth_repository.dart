@@ -55,12 +55,23 @@ class ApiAuthRepository implements AuthRepository {
         '/auth/login',
         data: {'identifier': identifier.trim(), 'password': password},
       );
-      final data = response.data!;
-      await _tokenStore.write(data['access_token'].toString());
-      return AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
+      return await _storeSession(response.data!);
     } on DioException catch (error) {
       throw AuthException(_message(error));
     }
+  }
+
+  Future<AppUser> _storeSession(Map<String, dynamic> data) async {
+    final accessToken = data['access_token']?.toString();
+    final refreshToken = data['refresh_token']?.toString();
+    if (accessToken == null || accessToken.isEmpty || refreshToken == null || refreshToken.isEmpty) {
+      throw const AuthException('The server did not return a complete session.');
+    }
+    await _tokenStore.writeTokens(
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+    );
+    return AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
   }
 
   @override
@@ -89,7 +100,40 @@ class ApiAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> logout() => _tokenStore.clear();
+  Future<void> logout() async {
+    final refreshToken = await _tokenStore.readRefresh();
+    try {
+      if (refreshToken != null && refreshToken.isNotEmpty) {
+        await _dio.post<void>(
+          '/auth/logout',
+          data: {'refresh_token': refreshToken},
+        );
+      }
+    } on DioException {
+      // Local logout must still work offline. Server-side session expiry and
+      // rotation/reuse protection remain the fallback if revocation cannot be delivered.
+    } finally {
+      await _tokenStore.clear();
+    }
+  }
+
+  @override
+  Future<void> logoutAll() async {
+    final accessToken = await _tokenStore.read();
+    if (accessToken == null || accessToken.isEmpty) {
+      await _tokenStore.clear();
+      return;
+    }
+    try {
+      await _dio.post<void>(
+        '/auth/logout-all',
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+      await _tokenStore.clear();
+    } on DioException catch (error) {
+      throw AuthException(_message(error));
+    }
+  }
 
   String _message(DioException error) {
     final data = error.response?.data;
