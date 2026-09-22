@@ -12,6 +12,8 @@ import 'package:rental_property/features/feed/domain/feed_filters.dart';
 import 'package:rental_property/features/feed/domain/property_summary.dart';
 import 'package:rental_property/features/feed/presentation/bloc/feed_bloc.dart';
 import 'package:rental_property/features/feed/presentation/feed_filter_sheet.dart';
+import 'package:rental_property/features/messaging/data/api_messaging_repository.dart';
+import 'package:rental_property/features/messaging/presentation/messaging_screens.dart';
 import 'package:rental_property/features/notifications/data/api_notification_repository.dart';
 import 'package:rental_property/features/notifications/presentation/notifications_screen.dart';
 
@@ -84,6 +86,27 @@ class FeedScreen extends StatelessWidget {
                 }
               },
               icon: const Icon(Icons.visibility_outlined),
+            ),
+          ),
+          BlocBuilder<SessionCubit, SessionState>(
+            builder: (context, state) => IconButton(
+              tooltip: 'Messages',
+              onPressed: () {
+                if (state is SessionAuthenticated && !state.user.isAdmin) {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => ConversationsScreen(
+                        repository: ApiMessagingRepository.fromEnvironment(),
+                      ),
+                    ),
+                  );
+                } else if (state is! SessionAuthenticated) {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(builder: (_) => const AccountScreen()),
+                  );
+                }
+              },
+              icon: const Icon(Icons.forum_outlined),
             ),
           ),
           BlocBuilder<SessionCubit, SessionState>(
@@ -260,6 +283,7 @@ class _PropertyCard extends StatefulWidget {
 class _PropertyCardState extends State<_PropertyCard> {
   bool _saved = false;
   bool _saving = false;
+  bool _openingMessage = false;
 
   PropertySummary get property => widget.property;
 
@@ -310,6 +334,29 @@ class _PropertyCardState extends State<_PropertyCard> {
         ),
       ),
     );
+  }
+
+  Future<void> _messageLandlord() async {
+    if (_openingMessage || !await _requireSeekerSession()) return;
+    setState(() => _openingMessage = true);
+    final repository = ApiMessagingRepository.fromEnvironment();
+    try {
+      final conversation = await repository.startConversation(property.id);
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            conversation: conversation,
+            repository: repository,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) setState(() => _openingMessage = false);
+    }
   }
 
   @override
@@ -380,18 +427,27 @@ class _PropertyCardState extends State<_PropertyCard> {
                     ],
                   ),
                   const SizedBox(height: 14),
+                  Text(
+                    'From ${currency.format(property.monthlyRent)} / month',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          'From ${currency.format(property.monthlyRent)} / month',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                        child: OutlinedButton.icon(
+                          onPressed: _openingMessage ? null : _messageLandlord,
+                          icon: const Icon(Icons.chat_bubble_outline_rounded),
+                          label: const Text('Message'),
                         ),
                       ),
-                      OutlinedButton.icon(
-                        onPressed: _requestViewing,
-                        icon: const Icon(Icons.visibility_outlined),
-                        label: const Text('View'),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _requestViewing,
+                          icon: const Icon(Icons.visibility_outlined),
+                          label: const Text('View'),
+                        ),
                       ),
                     ],
                   ),
