@@ -19,12 +19,10 @@ def upgrade() -> None:
     op.create_table(
         "audit_events",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column(
-            "actor_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("users.id", ondelete="SET NULL"),
-            nullable=True,
-        ),
+        # Historical actor UUIDs intentionally have no foreign key. The table
+        # is append-only, so later user deletion/deactivation must not rewrite
+        # an existing audit record.
+        sa.Column("actor_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("actor_role", sa.String(length=40), nullable=True),
         sa.Column("action", sa.String(length=100), nullable=False),
         sa.Column("entity_type", sa.String(length=80), nullable=False),
