@@ -20,6 +20,7 @@ class SecureTokenStore implements TokenStore {
   static const _accessKey = 'mosala_rental_access_token';
   static const _refreshKey = 'mosala_rental_refresh_token';
   static Future<String?>? _refreshInFlight;
+  static int _sessionGeneration = 0;
 
   final FlutterSecureStorage _storage;
   final Dio _refreshDio;
@@ -74,9 +75,11 @@ class SecureTokenStore implements TokenStore {
     final inFlight = _refreshInFlight;
     if (inFlight != null) return inFlight;
 
+    final generation = _sessionGeneration;
     final future = _performRotation(
       refreshToken,
       fallbackAccessToken: fallbackAccessToken,
+      generation: generation,
     );
     _refreshInFlight = future;
     try {
@@ -91,6 +94,7 @@ class SecureTokenStore implements TokenStore {
   Future<String?> _performRotation(
     String refreshToken, {
     required String? fallbackAccessToken,
+    required int generation,
   }) async {
     try {
       final response = await _refreshDio.post<Map<String, dynamic>>(
@@ -104,10 +108,13 @@ class SecureTokenStore implements TokenStore {
       if (access == null || access.isEmpty || refresh == null || refresh.isEmpty) {
         return fallbackAccessToken;
       }
-      await writeTokens(accessToken: access, refreshToken: refresh);
+      if (generation != _sessionGeneration) {
+        return _storage.read(key: _accessKey);
+      }
+      await _writeTokensInternal(accessToken: access, refreshToken: refresh);
       return access;
     } on DioException catch (error) {
-      if (error.response?.statusCode == 401) {
+      if (error.response?.statusCode == 401 && generation == _sessionGeneration) {
         await clear();
         return null;
       }
@@ -121,10 +128,21 @@ class SecureTokenStore implements TokenStore {
   Future<String?> readRefresh() => _storage.read(key: _refreshKey);
 
   @override
-  Future<void> write(String token) => _storage.write(key: _accessKey, value: token);
+  Future<void> write(String token) async {
+    _sessionGeneration += 1;
+    await _storage.write(key: _accessKey, value: token);
+  }
 
   @override
   Future<void> writeTokens({
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    _sessionGeneration += 1;
+    await _writeTokensInternal(accessToken: accessToken, refreshToken: refreshToken);
+  }
+
+  Future<void> _writeTokensInternal({
     required String accessToken,
     required String refreshToken,
   }) async {
@@ -134,6 +152,7 @@ class SecureTokenStore implements TokenStore {
 
   @override
   Future<void> clear() async {
+    _sessionGeneration += 1;
     await _storage.delete(key: _accessKey);
     await _storage.delete(key: _refreshKey);
   }
