@@ -85,7 +85,7 @@ The backend persists notifications first, then the worker relays undelivered not
 
 ## Flutter
 
-If platform runners are not yet present on a workstation with Flutter installed, generate them once and then run the application:
+The repository intentionally keeps the Dart application source independent from generated platform-runner boilerplate. On a developer workstation, generate the runner(s) required for local work without regenerating `lib/`:
 
 ```bash
 cd mobile
@@ -95,6 +95,12 @@ flutter run
 ```
 
 Do not regenerate `lib/` when adding platform runners.
+
+### Android acceptance package
+
+Pull requests and `main` builds include an **Android acceptance APK** gate. CI creates only the missing Android runner in its temporary workspace, restores the repository-controlled Flutter configuration, builds the application in release mode, verifies the APK, writes a SHA-256 checksum, and uploads both files as a GitHub Actions artifact for 14 days.
+
+The acceptance APK proves the current Flutter code and native plugins compile into an Android package. It is **not** the Play Store production binary: CI does not contain Mosala's production signing keystore, release signing credentials, production API endpoint, or Google Maps Android API credential. Those values must be provisioned through the approved release environment rather than committed to Git.
 
 ## Production deployment
 
@@ -140,13 +146,14 @@ The complete VPS, TLS, update, backup, restore and rollback procedure is in `doc
 - durable in-app notifications with authenticated WebSocket realtime delivery
 - automatic Flutter WebSocket reconnect and duplicate-event protection
 - admin marketplace analytics and landlord portfolio analytics
+- immutable request-linked audit ledger with Flutter admin viewer
 - automatic unpaid-booking expiry and upcoming-viewing reminders
 - production-safe worker locking, dependency readiness probes and production-secret validation
 - production TLS/reverse proxy, private data services and backup/restore operations
 
 ## Validation
 
-CI validates both development and production Docker Compose configurations, checks deployment-script syntax, compiles the backend, applies the complete Alembic migration chain to PostgreSQL/PostGIS, runs backend tests, builds the non-root backend Docker image, runs Flutter analysis and executes Flutter tests.
+CI validates both development and production Docker Compose configurations, checks deployment-script syntax, compiles the backend, applies the complete Alembic migration chain to PostgreSQL/PostGIS, runs ordinary backend tests plus the full rental-lifecycle acceptance gate, builds the non-root backend Docker image, runs Flutter analysis/tests, and on pull requests/`main` builds a release-mode Android acceptance APK with a checksum artifact.
 
 Live payment-provider settlement and external mobile push delivery are intentionally not simulated; those integration slices require the selected production providers and credentials.
 
