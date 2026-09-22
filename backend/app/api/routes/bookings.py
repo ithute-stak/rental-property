@@ -91,13 +91,28 @@ async def _release_unit_after_failed_booking(db: AsyncSession, unit: Unit) -> No
             Tenancy.status == TenancyStatus.NOTICE_GIVEN.value,
         )
     )
-    if notice is None:
-        unit.status = UnitStatus.AVAILABLE.value
+    if notice is not None:
+        unit.status = (
+            UnitStatus.VACATING_SOON.value
+            if notice.allow_readvertise
+            else UnitStatus.NOTICE_GIVEN.value
+        )
         return
+
+    inspection_pending = await db.scalar(
+        select(Tenancy.id)
+        .where(
+            Tenancy.unit_id == unit.id,
+            Tenancy.status == TenancyStatus.ENDED.value,
+            Tenancy.inspection_completed_at.is_(None),
+        )
+        .order_by(Tenancy.ended_at.desc(), Tenancy.created_at.desc())
+        .limit(1)
+    )
     unit.status = (
-        UnitStatus.VACATING_SOON.value
-        if notice.allow_readvertise
-        else UnitStatus.NOTICE_GIVEN.value
+        UnitStatus.INSPECTION.value
+        if inspection_pending is not None
+        else UnitStatus.AVAILABLE.value
     )
 
 
@@ -183,7 +198,10 @@ async def create_booking(
     redis: Redis = Depends(get_redis),
 ) -> BookingRead:
     if payload.move_in_date < date.today():
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Move-in date cannot be in the past")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Move-in date cannot be in the past",
+        )
 
     hold_owner = await redis.get(_hold_key(payload.unit_id))
     if hold_owner != str(user.id):
@@ -268,7 +286,11 @@ async def list_landlord_bookings(
     user: User = Depends(require_roles(UserRole.LANDLORD.value, UserRole.ADMIN.value)),
     db: AsyncSession = Depends(get_db),
 ) -> list[BookingRead]:
-    query = select(Booking).join(Unit, Unit.id == Booking.unit_id).join(Property, Property.id == Unit.property_id)
+    query = (
+        select(Booking)
+        .join(Unit, Unit.id == Booking.unit_id)
+        .join(Property, Property.id == Unit.property_id)
+    )
     if user.role == UserRole.LANDLORD.value:
         query = query.where(Property.owner_id == user.id)
     rows = await db.scalars(query.order_by(Booking.created_at.desc()))
@@ -299,7 +321,18 @@ async def submit_booking_payment(
     if booking.seeker_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Booking access denied")
     if booking.status not in {BookingStatus.PENDING_PAYMENT.value, BookingStatus.PAYMENT_REVIEW.value}:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking is not awaiting payment review")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Booking is not awaiting payment review",
+        )
+    if (
+        booking.status == BookingStatus.PENDING_PAYMENT.value
+        and booking.payment_due_at <= _utcnow()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The booking payment deadline has expired",
+        )
 
     payment = await db.scalar(select(BookingPayment).where(BookingPayment.booking_id == booking.id))
     if payment is None:
@@ -309,9 +342,17 @@ async def submit_booking_payment(
     payment.status = PaymentStatus.SUBMITTED.value
     payment.submitted_at = _utcnow()
     if booking.status != BookingStatus.PAYMENT_REVIEW.value:
-        _history(db, booking, BookingStatus.PAYMENT_REVIEW.value, user.id, "Payment submitted for admin verification")
+        _history(
+            db,
+            booking,
+            BookingStatus.PAYMENT_REVIEW.value,
+            user.id,
+            "Payment submitted for admin verification",
+        )
 
-    admins = await db.scalars(select(User).where(User.role == UserRole.ADMIN.value, User.is_active.is_(True)))
+    admins = await db.scalars(
+        select(User).where(User.role == UserRole.ADMIN.value, User.is_active.is_(True))
+    )
     for admin in admins:
         _notify(
             db,
@@ -336,9 +377,16 @@ async def confirm_booking(
 ) -> BookingRead:
     booking = await _booking_for_update(db, booking_id)
     if booking.status != BookingStatus.PAYMENT_REVIEW.value:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking is not awaiting admin confirmation")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Booking is not awaiting admin confirmation",
+        )
 
-    payment = await db.scalar(select(BookingPayment).where(BookingPayment.booking_id == booking.id).with_for_update())
+    payment = await db.scalar(
+        select(BookingPayment)
+        .where(BookingPayment.booking_id == booking.id)
+        .with_for_update()
+    )
     if payment is None or payment.status != PaymentStatus.SUBMITTED.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Submitted payment is required")
     unit = await db.scalar(select(Unit).where(Unit.id == booking.unit_id).with_for_update())
@@ -353,7 +401,13 @@ async def confirm_booking(
     payment.confirmed_at = now
     payment.confirmed_by = admin.id
     booking.confirmed_at = now
-    _history(db, booking, BookingStatus.CONFIRMED.value, admin.id, payload.note or "Payment verified by admin")
+    _history(
+        db,
+        booking,
+        BookingStatus.CONFIRMED.value,
+        admin.id,
+        payload.note or "Payment verified by admin",
+    )
     unit.status = UnitStatus.BOOKED.value
 
     existing_ledger = await db.scalar(select(LedgerEntry.id).where(LedgerEntry.booking_id == booking.id))
@@ -414,13 +468,23 @@ async def reject_booking_payment(
     booking = await _booking_for_update(db, booking_id)
     if booking.status != BookingStatus.PAYMENT_REVIEW.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking is not awaiting admin review")
-    payment = await db.scalar(select(BookingPayment).where(BookingPayment.booking_id == booking.id).with_for_update())
+    payment = await db.scalar(
+        select(BookingPayment)
+        .where(BookingPayment.booking_id == booking.id)
+        .with_for_update()
+    )
     unit = await db.scalar(select(Unit).where(Unit.id == booking.unit_id).with_for_update())
     if payment is None or unit is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking records are incomplete")
 
     payment.status = PaymentStatus.REJECTED.value
-    _history(db, booking, BookingStatus.REJECTED.value, admin.id, payload.note or "Payment rejected by admin")
+    _history(
+        db,
+        booking,
+        BookingStatus.REJECTED.value,
+        admin.id,
+        payload.note or "Payment rejected by admin",
+    )
     await _release_unit_after_failed_booking(db, unit)
     property_row = await db.get(Property, unit.property_id)
     _notify(
@@ -428,7 +492,8 @@ async def reject_booking_payment(
         booking.seeker_id,
         "booking_rejected",
         "Booking payment was not approved",
-        payload.note or "The payment could not be verified. You can contact Mosala Rentals for assistance.",
+        payload.note
+        or "The payment could not be verified. You can contact Mosala Rentals for assistance.",
         booking_id=str(booking.id),
     )
     if property_row is not None:
@@ -455,10 +520,25 @@ async def cancel_booking(
     booking = await _booking_for_update(db, booking_id)
     if booking.seeker_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Booking access denied")
-    if booking.status not in {BookingStatus.PENDING_PAYMENT.value, BookingStatus.PAYMENT_REVIEW.value}:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Confirmed bookings cannot be cancelled here")
+    if booking.status == BookingStatus.PAYMENT_REVIEW.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A submitted payment must be reviewed by Mosala before this booking can be cancelled",
+        )
+    if booking.status != BookingStatus.PENDING_PAYMENT.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only unpaid pending bookings can be cancelled here",
+        )
 
     unit = await db.scalar(select(Unit).where(Unit.id == booking.unit_id).with_for_update())
+    payment = await db.scalar(
+        select(BookingPayment)
+        .where(BookingPayment.booking_id == booking.id)
+        .with_for_update()
+    )
+    if payment is not None:
+        payment.status = PaymentStatus.CANCELLED.value
     if unit is not None:
         await _release_unit_after_failed_booking(db, unit)
         property_row = await db.get(Property, unit.property_id)
@@ -468,7 +548,7 @@ async def cancel_booking(
                 property_row.owner_id,
                 "booking_cancelled",
                 "Booking cancelled",
-                f"The pending booking for {unit.name} was cancelled and the unit can be offered again.",
+                f"The unpaid booking for {unit.name} was cancelled and the unit can be offered again.",
                 unit_id=str(unit.id),
                 booking_id=str(booking.id),
             )

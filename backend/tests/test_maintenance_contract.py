@@ -22,6 +22,13 @@ def test_booking_release_preserves_nonadvertised_notice_state():
     assert unit_status_after_booking_release(notice) == UnitStatus.NOTICE_GIVEN.value
 
 
+def test_booking_release_preserves_pending_inspection_state():
+    assert (
+        unit_status_after_booking_release(None, inspection_pending=True)
+        == UnitStatus.INSPECTION.value
+    )
+
+
 def test_maintenance_result_defaults_to_zero_counts():
     assert MaintenanceResult().expired_bookings == 0
     assert MaintenanceResult().viewing_reminders == 0

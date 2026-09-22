@@ -11,6 +11,7 @@ def test_booking_lifecycle_statuses_are_stable():
     assert BookingStatus.CONFIRMED.value == "confirmed"
     assert BookingStatus.FULFILLED.value == "fulfilled"
     assert PaymentStatus.CONFIRMED.value == "confirmed"
+    assert PaymentStatus.CANCELLED.value == "cancelled"
 
 
 def test_booking_payment_method_is_restricted():

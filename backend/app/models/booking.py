@@ -26,6 +26,7 @@ class PaymentStatus(str, enum.Enum):
     CONFIRMED = "confirmed"
     REJECTED = "rejected"
     REFUNDED = "refunded"
+    CANCELLED = "cancelled"
     EXPIRED = "expired"
 
 

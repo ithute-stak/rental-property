@@ -27,12 +27,18 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def unit_status_after_booking_release(notice: Tenancy | None) -> str:
-    if notice is None:
-        return UnitStatus.AVAILABLE.value
-    if notice.allow_readvertise:
-        return UnitStatus.VACATING_SOON.value
-    return UnitStatus.NOTICE_GIVEN.value
+def unit_status_after_booking_release(
+    notice: Tenancy | None,
+    *,
+    inspection_pending: bool = False,
+) -> str:
+    if notice is not None:
+        if notice.allow_readvertise:
+            return UnitStatus.VACATING_SOON.value
+        return UnitStatus.NOTICE_GIVEN.value
+    if inspection_pending:
+        return UnitStatus.INSPECTION.value
+    return UnitStatus.AVAILABLE.value
 
 
 async def _active_notice(db: AsyncSession, unit_id) -> Tenancy | None:
@@ -42,6 +48,20 @@ async def _active_notice(db: AsyncSession, unit_id) -> Tenancy | None:
             Tenancy.status == TenancyStatus.NOTICE_GIVEN.value,
         )
     )
+
+
+async def _inspection_pending(db: AsyncSession, unit_id) -> bool:
+    row = await db.scalar(
+        select(Tenancy.id)
+        .where(
+            Tenancy.unit_id == unit_id,
+            Tenancy.status == TenancyStatus.ENDED.value,
+            Tenancy.inspection_completed_at.is_(None),
+        )
+        .order_by(Tenancy.ended_at.desc(), Tenancy.created_at.desc())
+        .limit(1)
+    )
+    return row is not None
 
 
 def _notify(
@@ -108,7 +128,12 @@ async def expire_stale_bookings(
 
         if unit.status == UnitStatus.BOOKING_PENDING.value:
             notice = await _active_notice(db, unit.id)
-            unit.status = unit_status_after_booking_release(notice)
+            unit.status = unit_status_after_booking_release(
+                notice,
+                inspection_pending=(
+                    False if notice is not None else await _inspection_pending(db, unit.id)
+                ),
+            )
 
         property_row = await db.get(Property, unit.property_id)
         _notify(
