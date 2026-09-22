@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rental_property/features/booking/data/api_booking_repository.dart';
+import 'package:rental_property/features/engagement/data/api_engagement_repository.dart';
+import 'package:rental_property/features/engagement/presentation/engagement_screens.dart';
 import 'package:rental_property/features/landlord/data/api_landlord_account_repository.dart';
 import 'package:rental_property/features/landlord/data/api_landlord_property_repository.dart';
 import 'package:rental_property/features/landlord/data/api_property_media_repository.dart';
@@ -85,12 +87,27 @@ class _LandlordWorkspaceScreenState extends State<LandlordWorkspaceScreen> {
     );
   }
 
+  Future<void> _openViewings() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => LandlordViewingsScreen(
+          repository: ApiEngagementRepository.fromEnvironment(),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Landlord workspace'),
         actions: [
+          IconButton(
+            tooltip: 'Viewing requests',
+            onPressed: _openViewings,
+            icon: const Icon(Icons.visibility_outlined),
+          ),
           IconButton(
             tooltip: 'Landlord verification',
             onPressed: _openVerification,
