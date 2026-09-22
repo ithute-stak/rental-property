@@ -129,6 +129,10 @@ class RealtimeClient {
   }
 
   void _handleDisconnect() {
+    final closeCode = _channel?.closeCode;
+    if (closeCode == 4400 || closeCode == 4401) {
+      _shouldRun = false;
+    }
     unawaited(_closeTransport().whenComplete(_scheduleReconnect));
   }
 
