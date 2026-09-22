@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 from urllib.parse import quote
 
@@ -20,6 +19,7 @@ ANDROID_PUBLISHER_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 API_ROOT = "https://androidpublisher.googleapis.com/androidpublisher/v3"
 UPLOAD_ROOT = "https://androidpublisher.googleapis.com/upload/androidpublisher/v3"
 DEFAULT_CREDENTIAL_ENV = "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"
+MOSALA_APPLICATION_ID = "ls.co.mosala.rentals"
 
 
 class PublishError(RuntimeError):
@@ -97,6 +97,7 @@ def publish_internal(
     bundle: Path,
     application_id: str,
     release_name: str,
+    expected_version_code: str,
 ) -> str:
     package = quote(application_id, safe="")
     edit_id: str | None = None
@@ -129,6 +130,11 @@ def publish_internal(
         version_code = str(uploaded.get("versionCode", "")).strip()
         if not version_code.isdigit():
             raise PublishError("Google Play did not return a valid bundle versionCode")
+        if version_code != expected_version_code:
+            raise PublishError(
+                "uploaded bundle versionCode does not match requested release: "
+                f"expected {expected_version_code}, Google Play reported {version_code}"
+            )
 
         checked(
             session.put(
@@ -183,6 +189,7 @@ def main() -> None:
     parser.add_argument("--bundle", required=True, type=Path)
     parser.add_argument("--application-id", required=True)
     parser.add_argument("--release-name", required=True)
+    parser.add_argument("--expected-version-code", required=True)
     parser.add_argument(
         "--service-account-env",
         default=DEFAULT_CREDENTIAL_ENV,
@@ -191,11 +198,17 @@ def main() -> None:
     args = parser.parse_args()
 
     application_id = args.application_id.strip()
-    if not application_id or "." not in application_id:
-        fail("application id is invalid")
+    if application_id != MOSALA_APPLICATION_ID:
+        fail(
+            f"automated publishing is locked to {MOSALA_APPLICATION_ID}; "
+            f"received {application_id or '<empty>'}"
+        )
     release_name = args.release_name.strip()
     if not release_name:
         fail("release name is required")
+    expected_version_code = args.expected_version_code.strip()
+    if not expected_version_code.isdigit() or int(expected_version_code) <= 0:
+        fail("expected version code must be a positive integer")
 
     bundle = args.bundle.resolve()
     require_file(bundle)
@@ -208,6 +221,7 @@ def main() -> None:
             bundle=bundle,
             application_id=application_id,
             release_name=release_name,
+            expected_version_code=expected_version_code,
         )
     except PublishError as exc:
         fail(str(exc))
