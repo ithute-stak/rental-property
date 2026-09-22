@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import settings
 from app.models.base import Base
-from app.models import booking, media, rental, tenancy  # noqa: F401
+from app.models import advertising, booking, media, rental, tenancy  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
