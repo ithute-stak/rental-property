@@ -1,13 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rental_property/features/auth/domain/app_user.dart';
 import 'package:rental_property/features/auth/domain/auth_repository.dart';
+import 'package:rental_property/features/feed/domain/feed_filters.dart';
 import 'package:rental_property/features/feed/domain/feed_repository.dart';
 import 'package:rental_property/features/feed/domain/property_summary.dart';
 import 'package:rental_property/main.dart';
 
 class _FakeFeedRepository implements FeedRepository {
   @override
-  Future<List<PropertySummary>> fetchProperties({String query = ''}) async {
+  Future<List<PropertySummary>> fetchProperties({
+    String query = '',
+    FeedFilters filters = const FeedFilters(),
+  }) async {
     return const [
       PropertySummary(
         id: 'property-1',
@@ -62,6 +66,7 @@ void main() {
     expect(find.text('Modern room in Maseru'), findsOneWidget);
     expect(find.text('2 available'), findsOneWidget);
     expect(find.byTooltip('Sign in'), findsOneWidget);
+    expect(find.byTooltip('Search filters'), findsOneWidget);
   });
 
   test('property summary accepts decimal rent encoded as a string', () {
@@ -79,5 +84,20 @@ void main() {
     expect(property.monthlyRent, 2150);
     expect(property.area, 'Maseru');
     expect(property.availableRooms, 3);
+  });
+
+  test('feed filters identify active PostGIS radius search', () {
+    const filters = FeedFilters(
+      town: 'Maseru',
+      minRent: 1000,
+      maxRent: 3000,
+      latitude: -29.3151,
+      longitude: 27.4869,
+      radiusKm: 8,
+    );
+
+    expect(filters.isEmpty, isFalse);
+    expect(filters.hasLocation, isTrue);
+    expect(filters.radiusKm, 8);
   });
 }
