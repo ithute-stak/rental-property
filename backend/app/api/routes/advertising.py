@@ -11,6 +11,11 @@ from app.models.advertising import AdvertCharge, AdvertChargeStatus
 from app.models.booking import Notification
 from app.models.rental import Property, User, UserRole
 from app.schemas.advertising import AdvertChargePaymentSubmit, AdvertChargeRead
+from app.services.payments import (
+    PaymentReferenceConflict,
+    claim_payment_reference,
+    normalize_payment_reference,
+)
 
 router = APIRouter()
 
@@ -35,7 +40,10 @@ async def get_advert_charge(
     await _owned_property(db, property_id, user)
     charge = await db.scalar(select(AdvertCharge).where(AdvertCharge.property_id == property_id))
     if charge is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Advert charge has not been quoted yet")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Advert charge has not been quoted yet",
+        )
     return charge
 
 
@@ -51,7 +59,10 @@ async def submit_advert_charge_payment(
         select(AdvertCharge).where(AdvertCharge.property_id == property_id).with_for_update()
     )
     if charge is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Advert charge has not been quoted yet")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Advert charge has not been quoted yet",
+        )
     if charge.status not in {
         AdvertChargeStatus.QUOTED.value,
         AdvertChargeStatus.PAYMENT_REJECTED.value,
@@ -66,8 +77,20 @@ async def submit_advert_charge_payment(
             detail="This advert charge does not require payment",
         )
 
+    reference = normalize_payment_reference(payload.reference)
+    try:
+        await claim_payment_reference(
+            db,
+            method=payload.method,
+            reference=reference,
+            source_type="advert_charge",
+            source_id=charge.id,
+        )
+    except PaymentReferenceConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
     charge.payment_method = payload.method
-    charge.payment_reference = payload.reference.strip()
+    charge.payment_reference = reference
     charge.payment_submitted_at = datetime.now(timezone.utc)
     charge.status = AdvertChargeStatus.PAYMENT_SUBMITTED.value
 

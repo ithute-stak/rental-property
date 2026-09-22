@@ -3,6 +3,7 @@ from app.models.booking import Booking, BookingPayment, BookingStatusHistory, Le
 from app.models.engagement import FavouriteProperty, ViewingRequest
 from app.models.media import PropertyMedia
 from app.models.messaging import Conversation, Message
+from app.models.payment import PaymentReferenceClaim
 from app.models.rental import LandlordProfile, Property, Unit, User
 from app.models.tenancy import Tenancy
 
@@ -17,6 +18,7 @@ __all__ = [
     "LedgerEntry",
     "Message",
     "Notification",
+    "PaymentReferenceClaim",
     "Property",
     "PropertyMedia",
     "Tenancy",

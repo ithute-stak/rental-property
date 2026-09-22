@@ -29,6 +29,11 @@ from app.schemas.booking import (
     BookingPaymentSubmit,
     BookingRead,
 )
+from app.services.payments import (
+    PaymentReferenceConflict,
+    claim_payment_reference,
+    normalize_payment_reference,
+)
 
 router = APIRouter()
 
@@ -320,35 +325,58 @@ async def submit_booking_payment(
     booking = await _booking_for_update(db, booking_id)
     if booking.seeker_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Booking access denied")
-    if booking.status not in {BookingStatus.PENDING_PAYMENT.value, BookingStatus.PAYMENT_REVIEW.value}:
+
+    payment = await db.scalar(
+        select(BookingPayment).where(BookingPayment.booking_id == booking.id).with_for_update()
+    )
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Payment record not found")
+
+    reference = normalize_payment_reference(payload.reference)
+    if booking.status == BookingStatus.PAYMENT_REVIEW.value:
+        if (
+            payment.status == PaymentStatus.SUBMITTED.value
+            and payment.method == payload.method
+            and payment.reference == reference
+        ):
+            return await _read_booking(db, booking)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A payment reference is already under review for this booking",
+        )
+    if booking.status != BookingStatus.PENDING_PAYMENT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Booking is not awaiting payment review",
         )
-    if (
-        booking.status == BookingStatus.PENDING_PAYMENT.value
-        and booking.payment_due_at <= _utcnow()
-    ):
+    if booking.payment_due_at <= _utcnow():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The booking payment deadline has expired",
         )
 
-    payment = await db.scalar(select(BookingPayment).where(BookingPayment.booking_id == booking.id))
-    if payment is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Payment record not found")
+    try:
+        await claim_payment_reference(
+            db,
+            method=payload.method,
+            reference=reference,
+            source_type="booking",
+            source_id=booking.id,
+        )
+    except PaymentReferenceConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
     payment.method = payload.method
-    payment.reference = payload.reference.strip()
+    payment.reference = reference
     payment.status = PaymentStatus.SUBMITTED.value
     payment.submitted_at = _utcnow()
-    if booking.status != BookingStatus.PAYMENT_REVIEW.value:
-        _history(
-            db,
-            booking,
-            BookingStatus.PAYMENT_REVIEW.value,
-            user.id,
-            "Payment submitted for admin verification",
-        )
+    _history(
+        db,
+        booking,
+        BookingStatus.PAYMENT_REVIEW.value,
+        user.id,
+        "Payment submitted for admin verification",
+    )
 
     admins = await db.scalars(
         select(User).where(User.role == UserRole.ADMIN.value, User.is_active.is_(True))
@@ -359,7 +387,7 @@ async def submit_booking_payment(
             admin.id,
             "payment_review_required",
             "Booking payment needs review",
-            f"Payment {payload.reference.strip()} for booking {booking.id} is ready for verification.",
+            f"Payment {reference} for booking {booking.id} is ready for verification.",
             booking_id=str(booking.id),
         )
 
