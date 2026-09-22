@@ -29,7 +29,7 @@ class RentalUnit {
   final String status;
   final DateTime? availableFrom;
 
-  bool get canBook => status == 'available';
+  bool get canBook => status == 'available' || status == 'vacating_soon';
 }
 
 class BookingSummary {
@@ -166,13 +166,11 @@ class ApiBookingRepository {
     }
   }
 
-  Future<List<BookingSummary>> listMine() async {
-    return _list('/bookings/mine');
-  }
+  Future<List<BookingSummary>> listMine() => _list('/bookings/mine');
 
-  Future<List<BookingSummary>> listAdminReview() async {
-    return _list('/bookings/admin/review');
-  }
+  Future<List<BookingSummary>> listLandlord() => _list('/bookings/landlord');
+
+  Future<List<BookingSummary>> listAdminReview() => _list('/bookings/admin/review');
 
   Future<BookingSummary> confirm(String bookingId, {String? note}) async {
     return _decision('/bookings/$bookingId/confirm', note);

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:rental_property/features/booking/data/api_booking_repository.dart';
 import 'package:rental_property/features/landlord/data/api_landlord_property_repository.dart';
 import 'package:rental_property/features/landlord/data/api_property_media_repository.dart';
 import 'package:rental_property/features/landlord/presentation/property_entry_screen.dart';
 import 'package:rental_property/features/landlord/presentation/property_media_screen.dart';
+import 'package:rental_property/features/tenancy/data/api_tenancy_repository.dart';
+import 'package:rental_property/features/tenancy/presentation/tenancy_screens.dart';
 
 class LandlordWorkspaceScreen extends StatefulWidget {
   const LandlordWorkspaceScreen({super.key, required this.repository});
@@ -48,10 +51,30 @@ class _LandlordWorkspaceScreenState extends State<LandlordWorkspaceScreen> {
     );
   }
 
+  Future<void> _openOccupancy() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => LandlordOccupancyScreen(
+          bookingRepository: ApiBookingRepository.fromEnvironment(),
+          tenancyRepository: ApiTenancyRepository.fromEnvironment(),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Landlord workspace')),
+      appBar: AppBar(
+        title: const Text('Landlord workspace'),
+        actions: [
+          IconButton(
+            tooltip: 'Occupancy & notices',
+            onPressed: _openOccupancy,
+            icon: const Icon(Icons.key_outlined),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openCreate,
         icon: const Icon(Icons.add_home_work_outlined),

@@ -6,6 +6,8 @@ import 'package:rental_property/features/booking/data/api_booking_repository.dar
 import 'package:rental_property/features/booking/presentation/booking_screens.dart';
 import 'package:rental_property/features/landlord/data/api_landlord_property_repository.dart';
 import 'package:rental_property/features/landlord/presentation/landlord_workspace_screen.dart';
+import 'package:rental_property/features/tenancy/data/api_tenancy_repository.dart';
+import 'package:rental_property/features/tenancy/presentation/tenancy_screens.dart';
 
 class AccountScreen extends StatelessWidget {
   const AccountScreen({super.key});
@@ -37,12 +39,16 @@ class _AuthenticatedAccountView extends StatelessWidget {
         ? 'System administrator'
         : user.isLandlord
             ? 'Landlord account'
-            : 'House seeker account';
+            : user.role == 'tenant'
+                ? 'Tenant account'
+                : 'House seeker account';
     final subtitle = user.isAdmin
         ? 'Verify submitted booking payments and control booking activation.'
         : user.isLandlord
-            ? 'Manage verification, rental properties, photos and availability.'
-            : 'Manage your room bookings and payment verification status.';
+            ? 'Manage verification, rental properties, photos, occupancy and notices.'
+            : user.role == 'tenant'
+                ? 'Manage your tenancy, bookings and notice-to-vacate lifecycle.'
+                : 'Manage your room bookings and payment verification status.';
 
     return Scaffold(
       appBar: const _AccountAppBar(),
@@ -63,20 +69,14 @@ class _AuthenticatedAccountView extends StatelessWidget {
           Text(user.phone, textAlign: TextAlign.center),
           if (user.email != null) Text(user.email!, textAlign: TextAlign.center),
           const SizedBox(height: 20),
-          Card(
-            child: ListTile(
-              leading: Icon(
-                user.isAdmin
-                    ? Icons.admin_panel_settings_outlined
-                    : user.isLandlord
-                        ? Icons.apartment_rounded
-                        : Icons.travel_explore_rounded,
-              ),
-              title: Text(title),
-              subtitle: Text(subtitle),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () {
-                if (user.isAdmin) {
+          if (user.isAdmin)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.admin_panel_settings_outlined),
+                title: Text(title),
+                subtitle: Text(subtitle),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => AdminBookingReviewScreen(
@@ -84,7 +84,17 @@ class _AuthenticatedAccountView extends StatelessWidget {
                       ),
                     ),
                   );
-                } else if (user.isLandlord) {
+                },
+              ),
+            )
+          else if (user.isLandlord)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.apartment_rounded),
+                title: Text(title),
+                subtitle: Text(subtitle),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => LandlordWorkspaceScreen(
@@ -92,7 +102,17 @@ class _AuthenticatedAccountView extends StatelessWidget {
                       ),
                     ),
                   );
-                } else if (isSeeker) {
+                },
+              ),
+            )
+          else if (isSeeker) ...[
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.event_available_outlined),
+                title: const Text('My bookings'),
+                subtitle: Text(subtitle),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => MyBookingsScreen(
@@ -100,11 +120,29 @@ class _AuthenticatedAccountView extends StatelessWidget {
                       ),
                     ),
                   );
-                }
-              },
+                },
+              ),
             ),
-          ),
-          if (isSeeker) ...[
+            const SizedBox(height: 10),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.key_outlined),
+                title: const Text('My tenancy & notice'),
+                subtitle: const Text(
+                  'View your active tenancy, expected move-out date and submit notice to vacate.',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => TenantTenanciesScreen(
+                        repository: ApiTenancyRepository.fromEnvironment(),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
             const SizedBox(height: 10),
             const Card(
               child: ListTile(
