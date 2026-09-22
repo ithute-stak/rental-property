@@ -41,6 +41,16 @@ def _search_point(latitude: Decimal, longitude: Decimal):
     )
 
 
+def _fuzzy_score(search_text: str):
+    return func.greatest(
+        func.similarity(func.coalesce(Property.title, ""), search_text),
+        func.similarity(func.coalesce(Property.area, ""), search_text),
+        func.similarity(func.coalesce(Property.town, ""), search_text),
+        func.similarity(func.coalesce(Property.district, ""), search_text),
+        func.similarity(func.coalesce(Property.physical_address, ""), search_text),
+    )
+
+
 async def _property_or_404(db: AsyncSession, property_id: uuid.UUID) -> Property:
     row = await db.get(Property, property_id)
     if row is None:
@@ -134,8 +144,11 @@ async def property_feed(
         .group_by(Property.id)
     )
 
+    search_score = None
     if q and q.strip():
-        term = f"%{q.strip()}%"
+        search_text = q.strip()
+        term = f"%{search_text}%"
+        search_score = _fuzzy_score(search_text)
         query = query.where(
             or_(
                 Property.title.ilike(term),
@@ -143,6 +156,7 @@ async def property_feed(
                 Property.town.ilike(term),
                 Property.district.ilike(term),
                 Property.physical_address.ilike(term),
+                search_score >= 0.18,
             )
         )
     if district:
@@ -157,8 +171,14 @@ async def property_feed(
     if latitude is not None and longitude is not None:
         search_point = _search_point(latitude, longitude)
         distance_metres = float(radius_km) * 1000
+        distance = func.ST_Distance(Property.location, search_point)
         query = query.where(func.ST_DWithin(Property.location, search_point, distance_metres))
-        query = query.order_by(func.ST_Distance(Property.location, search_point))
+        if search_score is not None:
+            query = query.order_by(search_score.desc(), distance)
+        else:
+            query = query.order_by(distance)
+    elif search_score is not None:
+        query = query.order_by(search_score.desc(), Property.created_at.desc())
     else:
         query = query.order_by(Property.created_at.desc())
 
