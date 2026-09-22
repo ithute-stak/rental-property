@@ -6,6 +6,8 @@ import 'package:rental_property/features/auth/presentation/account_screen.dart';
 import 'package:rental_property/features/auth/presentation/session_cubit.dart';
 import 'package:rental_property/features/booking/data/api_booking_repository.dart';
 import 'package:rental_property/features/booking/presentation/booking_screens.dart';
+import 'package:rental_property/features/engagement/data/api_engagement_repository.dart';
+import 'package:rental_property/features/engagement/presentation/engagement_screens.dart';
 import 'package:rental_property/features/feed/domain/property_summary.dart';
 import 'package:rental_property/features/feed/presentation/bloc/feed_bloc.dart';
 import 'package:rental_property/features/notifications/data/api_notification_repository.dart';
@@ -27,6 +29,48 @@ class FeedScreen extends StatelessWidget {
           ],
         ),
         actions: [
+          BlocBuilder<SessionCubit, SessionState>(
+            builder: (context, state) => IconButton(
+              tooltip: 'Saved homes',
+              onPressed: () {
+                if (state is SessionAuthenticated) {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => SavedHomesScreen(
+                        repository: ApiEngagementRepository.fromEnvironment(),
+                      ),
+                    ),
+                  );
+                } else {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(builder: (_) => const AccountScreen()),
+                  );
+                }
+              },
+              icon: const Icon(Icons.favorite_border_rounded),
+            ),
+          ),
+          BlocBuilder<SessionCubit, SessionState>(
+            builder: (context, state) => IconButton(
+              tooltip: 'My viewing requests',
+              onPressed: () {
+                if (state is SessionAuthenticated && !state.user.isLandlord && !state.user.isAdmin) {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => MyViewingsScreen(
+                        repository: ApiEngagementRepository.fromEnvironment(),
+                      ),
+                    ),
+                  );
+                } else if (state is! SessionAuthenticated) {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(builder: (_) => const AccountScreen()),
+                  );
+                }
+              },
+              icon: const Icon(Icons.visibility_outlined),
+            ),
+          ),
           BlocBuilder<SessionCubit, SessionState>(
             builder: (context, state) => IconButton(
               tooltip: 'Notifications',
@@ -175,10 +219,69 @@ class _MosalaBrandHeader extends StatelessWidget {
   }
 }
 
-class _PropertyCard extends StatelessWidget {
+class _PropertyCard extends StatefulWidget {
   const _PropertyCard({required this.property});
 
   final PropertySummary property;
+
+  @override
+  State<_PropertyCard> createState() => _PropertyCardState();
+}
+
+class _PropertyCardState extends State<_PropertyCard> {
+  bool _saved = false;
+  bool _saving = false;
+
+  PropertySummary get property => widget.property;
+
+  Future<bool> _requireSeekerSession() async {
+    final session = context.read<SessionCubit>().state;
+    if (session is SessionAuthenticated && !session.user.isLandlord && !session.user.isAdmin) {
+      return true;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const AccountScreen()),
+    );
+    if (!mounted) return false;
+    final restored = context.read<SessionCubit>().state;
+    return restored is SessionAuthenticated && !restored.user.isLandlord && !restored.user.isAdmin;
+  }
+
+  Future<void> _toggleSaved() async {
+    if (_saving || !await _requireSeekerSession()) return;
+    setState(() => _saving = true);
+    try {
+      final repository = ApiEngagementRepository.fromEnvironment();
+      if (_saved) {
+        await repository.unsaveProperty(property.id);
+      } else {
+        await repository.saveProperty(property.id);
+      }
+      if (!mounted) return;
+      setState(() => _saved = !_saved);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_saved ? 'Home saved.' : 'Home removed from saved homes.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _requestViewing() async {
+    if (!await _requireSeekerSession() || !mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => RequestViewingScreen(
+          repository: ApiEngagementRepository.fromEnvironment(),
+          propertyId: property.id,
+          propertyTitle: property.title,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -223,7 +326,11 @@ class _PropertyCard extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(child: Text(property.title, style: Theme.of(context).textTheme.titleMedium)),
-                      const Icon(Icons.favorite_border_rounded),
+                      IconButton(
+                        tooltip: _saved ? 'Remove saved home' : 'Save home',
+                        onPressed: _saving ? null : _toggleSaved,
+                        icon: Icon(_saved ? Icons.favorite_rounded : Icons.favorite_border_rounded),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -244,9 +351,20 @@ class _PropertyCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Text(
-                    'From ${currency.format(property.monthlyRent)} / month',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'From ${currency.format(property.monthlyRent)} / month',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _requestViewing,
+                        icon: const Icon(Icons.visibility_outlined),
+                        label: const Text('View'),
+                      ),
+                    ],
                   ),
                 ],
               ),
