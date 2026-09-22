@@ -93,3 +93,52 @@ jobs:
       - name: Run Flutter tests
         working-directory: mobile
         run: flutter test
+
+  android-acceptance:
+    name: android acceptance APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Android runner only
+        working-directory: mobile
+        run: |
+          test ! -d android
+          flutter create \
+            --platforms=android \
+            --org=ls.co.mosala \
+            --project-name=rental_property \
+            .
+          test -d android
+      - name: Restore repository pubspec after runner generation
+        run: git checkout -- mobile/pubspec.yaml mobile/analysis_options.yaml
+      - name: Install Flutter dependencies
+        working-directory: mobile
+        run: flutter pub get
+      - name: Build release acceptance APK
+        working-directory: mobile
+        run: >-
+          flutter build apk --release
+          --dart-define=API_BASE_URL=https://api.example.invalid/api/v1
+      - name: Verify APK and write checksum
+        working-directory: mobile
+        run: |
+          test -s build/app/outputs/flutter-apk/app-release.apk
+          sha256sum build/app/outputs/flutter-apk/app-release.apk \
+            > build/app/outputs/flutter-apk/app-release.apk.sha256
+      - name: Upload Android acceptance APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mosala-rentals-android-acceptance-${{ github.sha }}
+          path: |
+            mobile/build/app/outputs/flutter-apk/app-release.apk
+            mobile/build/app/outputs/flutter-apk/app-release.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
