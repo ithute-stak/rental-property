@@ -29,6 +29,7 @@ from app.schemas.booking import (
     BookingPaymentSubmit,
     BookingRead,
 )
+from app.services.audit import add_audit_event
 from app.services.payments import (
     PaymentReferenceConflict,
     claim_payment_reference,
@@ -269,6 +270,21 @@ async def create_booking(
         property_id=str(property_row.id),
         unit_id=str(unit.id),
     )
+    add_audit_event(
+        db,
+        actor=user,
+        action="booking.created",
+        entity_type="booking",
+        entity_id=booking.id,
+        details={
+            "property_id": property_row.id,
+            "unit_id": unit.id,
+            "to_status": booking.status,
+            "amount_due": booking.amount_due,
+            "currency": booking.currency,
+            "move_in_date": booking.move_in_date,
+        },
+    )
     await db.commit()
     await redis.delete(_hold_key(unit.id))
     await db.refresh(booking)
@@ -355,6 +371,8 @@ async def submit_booking_payment(
             detail="The booking payment deadline has expired",
         )
 
+    previous_status = booking.status
+    previous_payment_status = payment.status
     try:
         await claim_payment_reference(
             db,
@@ -391,6 +409,22 @@ async def submit_booking_payment(
             booking_id=str(booking.id),
         )
 
+    add_audit_event(
+        db,
+        actor=user,
+        action="booking.payment_submitted",
+        entity_type="booking",
+        entity_id=booking.id,
+        details={
+            "from_status": previous_status,
+            "to_status": booking.status,
+            "from_payment_status": previous_payment_status,
+            "to_payment_status": payment.status,
+            "amount": payment.amount,
+            "currency": payment.currency,
+            "payment_method": payment.method,
+        },
+    )
     await db.commit()
     await db.refresh(booking)
     return await _read_booking(db, booking)
@@ -424,6 +458,8 @@ async def confirm_booking(
     if property_row is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Property not found")
 
+    previous_status = booking.status
+    previous_payment_status = payment.status
     now = _utcnow()
     payment.status = PaymentStatus.CONFIRMED.value
     payment.confirmed_at = now
@@ -480,6 +516,25 @@ async def confirm_booking(
         booking_id=str(booking.id),
         unit_id=str(unit.id),
     )
+    add_audit_event(
+        db,
+        actor=admin,
+        action="booking.payment_confirmed",
+        entity_type="booking",
+        entity_id=booking.id,
+        details={
+            "property_id": property_row.id,
+            "unit_id": unit.id,
+            "from_status": previous_status,
+            "to_status": booking.status,
+            "from_payment_status": previous_payment_status,
+            "to_payment_status": payment.status,
+            "amount": payment.amount,
+            "currency": payment.currency,
+            "payment_method": payment.method,
+            "ledger_created": existing_ledger is None,
+        },
+    )
 
     await db.commit()
     await db.refresh(booking)
@@ -505,6 +560,8 @@ async def reject_booking_payment(
     if payment is None or unit is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking records are incomplete")
 
+    previous_status = booking.status
+    previous_payment_status = payment.status
     payment.status = PaymentStatus.REJECTED.value
     _history(
         db,
@@ -533,6 +590,25 @@ async def reject_booking_payment(
             f"{unit.name} is available for booking again after a payment was rejected.",
             unit_id=str(unit.id),
         )
+    add_audit_event(
+        db,
+        actor=admin,
+        action="booking.payment_rejected",
+        entity_type="booking",
+        entity_id=booking.id,
+        details={
+            "property_id": property_row.id if property_row is not None else None,
+            "unit_id": unit.id,
+            "from_status": previous_status,
+            "to_status": booking.status,
+            "from_payment_status": previous_payment_status,
+            "to_payment_status": payment.status,
+            "amount": payment.amount,
+            "currency": payment.currency,
+            "payment_method": payment.method,
+            "unit_status": unit.status,
+        },
+    )
 
     await db.commit()
     await db.refresh(booking)
@@ -559,12 +635,14 @@ async def cancel_booking(
             detail="Only unpaid pending bookings can be cancelled here",
         )
 
+    previous_status = booking.status
     unit = await db.scalar(select(Unit).where(Unit.id == booking.unit_id).with_for_update())
     payment = await db.scalar(
         select(BookingPayment)
         .where(BookingPayment.booking_id == booking.id)
         .with_for_update()
     )
+    previous_payment_status = payment.status if payment is not None else None
     if payment is not None:
         payment.status = PaymentStatus.CANCELLED.value
     if unit is not None:
@@ -582,6 +660,21 @@ async def cancel_booking(
             )
     booking.cancelled_at = _utcnow()
     _history(db, booking, BookingStatus.CANCELLED.value, user.id, "Cancelled by house seeker")
+    add_audit_event(
+        db,
+        actor=user,
+        action="booking.cancelled",
+        entity_type="booking",
+        entity_id=booking.id,
+        details={
+            "unit_id": booking.unit_id,
+            "from_status": previous_status,
+            "to_status": booking.status,
+            "from_payment_status": previous_payment_status,
+            "to_payment_status": payment.status if payment is not None else None,
+            "unit_status": unit.status if unit is not None else None,
+        },
+    )
     await db.commit()
     await db.refresh(booking)
     return await _read_booking(db, booking)
