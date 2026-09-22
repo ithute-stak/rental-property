@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:rental_property/features/admin/presentation/admin_operations_screen.dart';
 import 'package:rental_property/features/auth/domain/app_user.dart';
 import 'package:rental_property/features/auth/presentation/session_cubit.dart';
 import 'package:rental_property/features/booking/data/api_booking_repository.dart';
@@ -43,7 +44,7 @@ class _AuthenticatedAccountView extends StatelessWidget {
                 ? 'Tenant account'
                 : 'House seeker account';
     final subtitle = user.isAdmin
-        ? 'Verify submitted booking payments and control booking activation.'
+        ? 'Verify landlords, adverts, advertising charges and booking payments.'
         : user.isLandlord
             ? 'Manage verification, rental properties, photos, occupancy and notices.'
             : user.role == 'tenant'
@@ -78,11 +79,7 @@ class _AuthenticatedAccountView extends StatelessWidget {
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () {
                   Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => AdminBookingReviewScreen(
-                        repository: ApiBookingRepository.fromEnvironment(),
-                      ),
-                    ),
+                    MaterialPageRoute(builder: (_) => const AdminOperationsScreen()),
                   );
                 },
               ),
