@@ -30,11 +30,11 @@ class ApiFeedRepository implements FeedRepository {
     String query = '',
     FeedFilters filters = const FeedFilters(),
   }) async {
-    final searchParts = <String>[
-      if (query.trim().isNotEmpty) query.trim(),
-      if (filters.area.trim().isNotEmpty) filters.area.trim(),
-    ];
-    final searchText = searchParts.join(' ').trim();
+    final trimmedQuery = query.trim();
+    final areaQuery = filters.area.trim();
+    // The current FastAPI feed searches area/town/address through `q`. Prefer
+    // explicit free text when supplied; otherwise use the area/landmark field.
+    final searchText = trimmedQuery.isNotEmpty ? trimmedQuery : areaQuery;
 
     final response = await _dio.get<List<dynamic>>(
       '/properties/feed',
