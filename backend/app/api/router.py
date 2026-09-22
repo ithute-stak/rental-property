@@ -13,6 +13,7 @@ from app.api.routes import (
     messaging,
     notifications,
     properties,
+    realtime,
     tenancies,
 )
 
@@ -30,3 +31,4 @@ api_router.include_router(messaging.router, prefix="/messaging", tags=["messagin
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(realtime.router, tags=["realtime"])

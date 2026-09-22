@@ -1,9 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rental_property/features/auth/data/token_store.dart';
 import 'package:rental_property/features/auth/domain/app_user.dart';
 import 'package:rental_property/features/auth/domain/auth_repository.dart';
 import 'package:rental_property/features/feed/domain/feed_filters.dart';
 import 'package:rental_property/features/feed/domain/feed_repository.dart';
 import 'package:rental_property/features/feed/domain/property_summary.dart';
+import 'package:rental_property/features/realtime/data/realtime_client.dart';
 import 'package:rental_property/main.dart';
 
 class _FakeFeedRepository implements FeedRepository {
@@ -51,12 +53,30 @@ class _FakeAuthRepository implements AuthRepository {
   Future<void> logout() async {}
 }
 
+class _FakeTokenStore implements TokenStore {
+  @override
+  Future<void> clear() async {}
+
+  @override
+  Future<String?> read() async => null;
+
+  @override
+  Future<void> write(String token) async {}
+}
+
 void main() {
   testWidgets('feed loads Mosala branding and API-backed property state', (tester) async {
+    final realtimeClient = RealtimeClient(
+      Uri.parse('ws://localhost/api/v1/realtime'),
+      _FakeTokenStore(),
+    );
+    addTearDown(realtimeClient.dispose);
+
     await tester.pumpWidget(
       RentalPropertyApp(
         feedRepository: _FakeFeedRepository(),
         authRepository: _FakeAuthRepository(),
+        realtimeClient: realtimeClient,
       ),
     );
     await tester.pumpAndSettle();

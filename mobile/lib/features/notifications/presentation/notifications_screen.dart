@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:rental_property/features/notifications/data/api_notification_repository.dart';
+import 'package:rental_property/features/realtime/data/realtime_client.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key, required this.repository});
@@ -13,11 +17,28 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   late Future<List<AppNotification>> _notifications;
+  StreamSubscription<RealtimeEvent>? _realtimeSubscription;
 
   @override
   void initState() {
     super.initState();
     _reload();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _realtimeSubscription ??= context.read<RealtimeClient>().events.listen((event) {
+      if (event.type == 'notification.created' && mounted) {
+        setState(_reload);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_realtimeSubscription?.cancel());
+    super.dispose();
   }
 
   void _reload() => _notifications = widget.repository.list();

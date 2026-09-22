@@ -132,4 +132,5 @@ class Notification(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    realtime_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

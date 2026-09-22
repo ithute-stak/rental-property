@@ -9,13 +9,12 @@ The product follows the full rental lifecycle:
 ## Stack
 
 - Flutter + BLoC mobile application
-- FastAPI REST API
+- FastAPI REST + WebSocket API
 - PostgreSQL + PostGIS
 - Alembic migrations
-- Redis booking holds and maintenance locking
+- Redis booking holds, worker locks and realtime Pub/Sub
 - S3-compatible object storage for property media
-- background maintenance worker
-- WebSocket/push delivery remains a later real-time integration slice
+- background maintenance and realtime notification worker
 
 ## Repository layout
 
@@ -35,9 +34,9 @@ make migrate
 make api-run
 ```
 
-FastAPI is available at `http://localhost:8000`; health is `GET /api/v1/health` and OpenAPI is available at `/docs`.
+FastAPI is available at `http://localhost:8000`; liveness is `GET /api/v1/health`, dependency readiness is `GET /api/v1/health/ready`, realtime delivery is `WS /api/v1/realtime`, and OpenAPI is available at `/docs`.
 
-For the complete local infrastructure, including MinIO, migrations and the maintenance worker:
+For the complete local infrastructure, including MinIO, migrations and the maintenance/realtime worker:
 
 ```bash
 docker compose up -d
@@ -63,6 +62,16 @@ docker compose run --rm migrate mosala-provision-admin \
 ```
 
 Do not commit production credentials to this repository. When `APP_ENV=production`, the API refuses to start with the development JWT or object-storage secret defaults.
+
+## Realtime notification protocol
+
+Authenticated clients connect to `/api/v1/realtime` and send the JWT in the first WebSocket frame rather than putting it in the URL:
+
+```json
+{"type":"authenticate","token":"<access-token>"}
+```
+
+The backend persists notifications first, then the worker relays undelivered notification events through per-user Redis Pub/Sub channels. Delivery is intentionally at-least-once; the Flutter client deduplicates events by notification ID. Offline clients still retrieve the authoritative notification history through the REST endpoint.
 
 ## Flutter
 
@@ -91,15 +100,16 @@ Do not regenerate `lib/` when adding platform runners.
 - advertising charge quote/payment/waiver/activation lifecycle
 - Saved Homes and property viewing requests
 - private property-scoped messaging with unread/read state
-- in-app event notifications
+- durable in-app notifications with authenticated WebSocket realtime delivery
+- automatic Flutter WebSocket reconnect and duplicate-event protection
 - admin marketplace analytics and landlord portfolio analytics
 - automatic unpaid-booking expiry and upcoming-viewing reminders
-- production-safe worker locking and production-secret validation
+- production-safe worker locking, dependency readiness probes and production-secret validation
 
 ## Validation
 
-CI compiles the backend, applies the complete Alembic migration chain to PostgreSQL/PostGIS, runs backend tests, builds the backend Docker image, runs Flutter analysis and executes Flutter tests.
+CI validates Docker Compose, compiles the backend, applies the complete Alembic migration chain to PostgreSQL/PostGIS, runs backend tests, builds the backend Docker image, runs Flutter analysis and executes Flutter tests.
 
-Live payment-provider settlement and external push/WebSocket delivery are intentionally not simulated; those are integration slices that require the selected production providers and credentials.
+Live payment-provider settlement and external mobile push delivery are intentionally not simulated; those integration slices require the selected production providers and credentials.
 
 See `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` for the wider system design and delivery plan.
