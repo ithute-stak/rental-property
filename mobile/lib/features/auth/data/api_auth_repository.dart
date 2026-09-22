@@ -117,6 +117,24 @@ class ApiAuthRepository implements AuthRepository {
     }
   }
 
+  @override
+  Future<void> logoutAll() async {
+    final accessToken = await _tokenStore.read();
+    if (accessToken == null || accessToken.isEmpty) {
+      await _tokenStore.clear();
+      return;
+    }
+    try {
+      await _dio.post<void>(
+        '/auth/logout-all',
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+      await _tokenStore.clear();
+    } on DioException catch (error) {
+      throw AuthException(_message(error));
+    }
+  }
+
   String _message(DioException error) {
     final data = error.response?.data;
     if (data is Map && data['detail'] is String) {
