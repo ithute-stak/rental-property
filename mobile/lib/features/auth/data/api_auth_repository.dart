@@ -55,12 +55,23 @@ class ApiAuthRepository implements AuthRepository {
         '/auth/login',
         data: {'identifier': identifier.trim(), 'password': password},
       );
-      final data = response.data!;
-      await _tokenStore.write(data['access_token'].toString());
-      return AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
+      return _storeSession(response.data!);
     } on DioException catch (error) {
       throw AuthException(_message(error));
     }
+  }
+
+  Future<AppUser> _storeSession(Map<String, dynamic> data) async {
+    final accessToken = data['access_token']?.toString();
+    final refreshToken = data['refresh_token']?.toString();
+    if (accessToken == null || accessToken.isEmpty || refreshToken == null || refreshToken.isEmpty) {
+      throw const AuthException('The server did not return a complete session.');
+    }
+    await _tokenStore.writeTokens(
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+    );
+    return AppUser.fromJson(Map<String, dynamic>.from(data['user'] as Map));
   }
 
   @override
@@ -89,7 +100,19 @@ class ApiAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> logout() => _tokenStore.clear();
+  Future<void> logout() async {
+    final refreshToken = await _tokenStore.readRefresh();
+    try {
+      if (refreshToken != null && refreshToken.isNotEmpty) {
+        await _dio.post<void>(
+          '/auth/logout',
+          data: {'refresh_token': refreshToken},
+        );
+      }
+    } finally {
+      await _tokenStore.clear();
+    }
+  }
 
   String _message(DioException error) {
     final data = error.response?.data;
