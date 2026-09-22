@@ -16,7 +16,8 @@ fi
 umask 077
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DEST="$BACKUP_ROOT/$TIMESTAMP"
-mkdir -p "$DEST/media"
+MEDIA_STAGE="$DEST/media-stage"
+mkdir -p "$MEDIA_STAGE"
 
 compose() {
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
@@ -25,28 +26,32 @@ compose() {
 echo "Backing up PostgreSQL to $DEST/postgres.dump"
 compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$DEST/postgres.dump"
 
-echo "Mirroring MinIO bucket to $DEST/media"
+echo "Mirroring MinIO bucket to a private staging directory"
 docker run --rm \
   --network "$NETWORK_NAME" \
   --env-file "$ENV_FILE" \
-  -v "$DEST/media:/backup" \
+  -v "$MEDIA_STAGE:/backup" \
+  --entrypoint /bin/sh \
   "$MC_IMAGE" \
-  sh -c '
+  -c '
     mc alias set source http://minio:9000 "$OBJECT_STORAGE_ACCESS_KEY" "$OBJECT_STORAGE_SECRET_KEY" >/dev/null &&
     mc mirror --overwrite source/"$OBJECT_STORAGE_BUCKET" /backup
   '
+
+tar -czf "$DEST/media.tar.gz" -C "$MEDIA_STAGE" .
+rm -rf "$MEDIA_STAGE"
 
 GIT_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf unknown)"
 {
   echo "created_at=$TIMESTAMP"
   echo "git_commit=$GIT_COMMIT"
   echo "database_format=pg_dump_custom"
-  echo "object_storage_bucket=media"
+  echo "media_format=tar_gzip_from_s3_mirror"
 } > "$DEST/manifest.txt"
 
 (
   cd "$DEST"
-  sha256sum postgres.dump manifest.txt > SHA256SUMS
+  sha256sum postgres.dump media.tar.gz manifest.txt > SHA256SUMS
 )
 
 ln -sfn "$TIMESTAMP" "$BACKUP_ROOT/latest"
