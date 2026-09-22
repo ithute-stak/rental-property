@@ -5,6 +5,7 @@ from app.api.routes import (
     advertising,
     auth,
     bookings,
+    engagement,
     health,
     landlords,
     media,
@@ -22,5 +23,6 @@ api_router.include_router(media.router, prefix="/properties", tags=["property-me
 api_router.include_router(advertising.router, prefix="/advertising", tags=["advertising"])
 api_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"])
 api_router.include_router(tenancies.router, prefix="/tenancies", tags=["tenancies"])
+api_router.include_router(engagement.router, prefix="/engagement", tags=["engagement"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
