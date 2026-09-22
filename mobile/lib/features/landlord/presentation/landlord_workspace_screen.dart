@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:rental_property/features/landlord/data/api_landlord_property_repository.dart';
+import 'package:rental_property/features/landlord/data/api_property_media_repository.dart';
 import 'package:rental_property/features/landlord/presentation/property_entry_screen.dart';
+import 'package:rental_property/features/landlord/presentation/property_media_screen.dart';
 
 class LandlordWorkspaceScreen extends StatefulWidget {
   const LandlordWorkspaceScreen({super.key, required this.repository});
@@ -33,6 +35,17 @@ class _LandlordWorkspaceScreenState extends State<LandlordWorkspaceScreen> {
     if (created == true && mounted) {
       setState(_reload);
     }
+  }
+
+  Future<void> _openMedia(LandlordPropertySummary property) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PropertyMediaScreen(
+          property: property,
+          repository: ApiPropertyMediaRepository.fromEnvironment(),
+        ),
+      ),
+    );
   }
 
   @override
@@ -82,10 +95,21 @@ class _LandlordWorkspaceScreenState extends State<LandlordWorkspaceScreen> {
                 final property = properties[index];
                 return Card(
                   child: ListTile(
+                    onTap: () => _openMedia(property),
                     leading: const CircleAvatar(child: Icon(Icons.apartment_rounded)),
                     title: Text(property.title),
-                    subtitle: Text('${property.town} • ${property.totalRooms} rooms'),
-                    trailing: _StatusBadge(status: property.status),
+                    subtitle: Text(
+                      '${property.town} • ${property.totalRooms} rooms\nTap to view or manage property photos',
+                    ),
+                    isThreeLine: true,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _StatusBadge(status: property.status),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.chevron_right_rounded),
+                      ],
+                    ),
                   ),
                 );
               },
