@@ -63,6 +63,12 @@ docker compose run --rm migrate mosala-provision-admin \
 
 Do not commit production credentials to this repository. When `APP_ENV=production`, the API refuses to start with the development JWT or object-storage secret defaults.
 
+## Authentication sessions
+
+Access tokens remain short-lived JWTs. Login also issues a long-lived opaque refresh token. Only its SHA-256 hash is stored by the backend. Refresh tokens rotate every time `/api/v1/auth/refresh` is used; replay of an already-used refresh token revokes the whole token family as a theft/reuse precaution. `/api/v1/auth/logout` revokes the current refresh session and `/api/v1/auth/logout-all` revokes every device session for the authenticated account.
+
+Flutter stores both credentials in secure storage. Existing authenticated API repositories continue requesting the current access token through the token store; when the JWT approaches expiry, the store performs one shared refresh operation and persists the rotated pair before returning the access token. This also gives WebSocket reconnects a current access token without duplicating refresh logic throughout the app.
+
 ## Realtime notification protocol
 
 Authenticated clients connect to `/api/v1/realtime` and send the JWT in the first WebSocket frame rather than putting it in the URL:
@@ -88,7 +94,10 @@ Do not regenerate `lib/` when adding platform runners.
 
 ## Implemented marketplace capabilities
 
-- JWT authentication and role-based access control
+- JWT authentication, rotating refresh sessions and role-based access control
+- secure Flutter token persistence with automatic access-token renewal
+- server-side current-device and all-device session revocation
+- refresh-token replay detection and family revocation
 - landlord profile verification and Mosala admin review
 - property/rental-unit separation and lifecycle management
 - property media upload, gallery and cover-image management
