@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BookingHoldRead(BaseModel):
@@ -45,6 +45,8 @@ class BookingRead(BaseModel):
 
 
 class NotificationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     notification_type: str
     title: str
