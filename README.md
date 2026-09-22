@@ -15,13 +15,17 @@ The product follows the full rental lifecycle:
 - Redis booking holds, worker locks and realtime Pub/Sub
 - S3-compatible object storage for property media
 - background maintenance and realtime notification worker
+- Caddy reverse proxy with automatic production TLS
 
 ## Repository layout
 
 ```text
-backend/     FastAPI API, workers, models, migrations and tests
-mobile/      Flutter client
-docs/        architecture and delivery roadmap
+backend/                 FastAPI API, workers, models, migrations and tests
+mobile/                  Flutter client
+docs/                    architecture, roadmap and deployment operations
+deploy/                  production proxy, environment template and recovery scripts
+docker-compose.yml       local/development infrastructure
+docker-compose.prod.yml  production VPS stack
 ```
 
 ## Local backend
@@ -86,6 +90,32 @@ flutter run
 
 Do not regenerate `lib/` when adding platform runners.
 
+## Production deployment
+
+The production stack keeps PostgreSQL and Redis off public host ports, fronts the API and media service with Caddy automatic HTTPS, uses a non-root backend container, and includes guarded database/media backup and restore tooling.
+
+Start by copying the production environment template:
+
+```bash
+cp deploy/.env.production.example deploy/.env.production
+chmod 600 deploy/.env.production
+```
+
+After replacing every placeholder and pointing the API/media DNS records at the VPS:
+
+```bash
+make prod-validate
+make prod-up
+```
+
+Back up before updates:
+
+```bash
+make prod-backup
+```
+
+The complete VPS, TLS, update, backup, restore and rollback procedure is in `docs/DEPLOYMENT.md`. Production secrets and local backups are ignored by Git.
+
 ## Implemented marketplace capabilities
 
 - JWT authentication and role-based access control
@@ -105,11 +135,12 @@ Do not regenerate `lib/` when adding platform runners.
 - admin marketplace analytics and landlord portfolio analytics
 - automatic unpaid-booking expiry and upcoming-viewing reminders
 - production-safe worker locking, dependency readiness probes and production-secret validation
+- production TLS/reverse proxy, private data services and backup/restore operations
 
 ## Validation
 
-CI validates Docker Compose, compiles the backend, applies the complete Alembic migration chain to PostgreSQL/PostGIS, runs backend tests, builds the backend Docker image, runs Flutter analysis and executes Flutter tests.
+CI validates both development and production Docker Compose configurations, checks deployment-script syntax, compiles the backend, applies the complete Alembic migration chain to PostgreSQL/PostGIS, runs backend tests, builds the non-root backend Docker image, runs Flutter analysis and executes Flutter tests.
 
 Live payment-provider settlement and external mobile push delivery are intentionally not simulated; those integration slices require the selected production providers and credentials.
 
-See `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` for the wider system design and delivery plan.
+See `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, and `docs/DEPLOYMENT.md` for the wider system design and operations guidance.
