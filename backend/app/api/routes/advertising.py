@@ -11,6 +11,7 @@ from app.models.advertising import AdvertCharge, AdvertChargeStatus
 from app.models.booking import Notification
 from app.models.rental import Property, User, UserRole
 from app.schemas.advertising import AdvertChargePaymentSubmit, AdvertChargeRead
+from app.services.audit import add_audit_event
 from app.services.payments import (
     PaymentReferenceConflict,
     claim_payment_reference,
@@ -77,6 +78,7 @@ async def submit_advert_charge_payment(
             detail="This advert charge does not require payment",
         )
 
+    previous_status = charge.status
     reference = normalize_payment_reference(payload.reference)
     try:
         await claim_payment_reference(
@@ -114,6 +116,20 @@ async def submit_advert_charge_payment(
             )
         )
 
+    add_audit_event(
+        db,
+        actor=user,
+        action="advert_charge.payment_submitted",
+        entity_type="property",
+        entity_id=property_row.id,
+        details={
+            "from_status": previous_status,
+            "to_status": charge.status,
+            "amount": charge.amount,
+            "currency": charge.currency,
+            "payment_method": payload.method,
+        },
+    )
     await db.commit()
     await db.refresh(charge)
     return charge

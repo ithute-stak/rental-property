@@ -15,6 +15,7 @@ from app.models.booking import (
 from app.models.engagement import ViewingRequest, ViewingStatus
 from app.models.rental import Property, Unit, UnitStatus
 from app.models.tenancy import Tenancy, TenancyStatus
+from app.services.audit import add_audit_event
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,8 @@ async def expire_stale_bookings(
             .with_for_update()
         )
         previous_status = booking.status
+        previous_unit_status = unit.status
+        previous_payment_status = payment.status if payment is not None else None
         booking.status = BookingStatus.EXPIRED.value
         if payment is not None and payment.status == PaymentStatus.PENDING.value:
             payment.status = PaymentStatus.EXPIRED.value
@@ -156,6 +159,24 @@ async def expire_stale_bookings(
                 unit_id=str(unit.id),
                 property_id=str(property_row.id),
             )
+        add_audit_event(
+            db,
+            actor=None,
+            action="booking.expired",
+            entity_type="booking",
+            entity_id=booking.id,
+            details={
+                "property_id": property_row.id if property_row is not None else None,
+                "unit_id": unit.id,
+                "from_status": previous_status,
+                "to_status": booking.status,
+                "from_payment_status": previous_payment_status,
+                "to_payment_status": payment.status if payment is not None else None,
+                "unit_from_status": previous_unit_status,
+                "unit_to_status": unit.status,
+                "reason": "payment_deadline_expired",
+            },
+        )
         expired += 1
 
     return expired

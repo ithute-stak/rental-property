@@ -27,6 +27,7 @@ from app.schemas.advertising import (
 )
 from app.schemas.landlord import LandlordProfileRead, LandlordVerificationDecision
 from app.schemas.property import PropertyRead
+from app.services.audit import add_audit_event
 
 router = APIRouter()
 
@@ -79,7 +80,7 @@ async def list_pending_landlord_verifications(
 async def decide_landlord_verification(
     user_id: uuid.UUID,
     payload: LandlordVerificationDecision,
-    _: User = Depends(require_roles(UserRole.ADMIN.value)),
+    admin: User = Depends(require_roles(UserRole.ADMIN.value)),
     db: AsyncSession = Depends(get_db),
 ) -> LandlordProfile:
     profile = await db.scalar(select(LandlordProfile).where(LandlordProfile.user_id == user_id))
@@ -91,6 +92,7 @@ async def decide_landlord_verification(
             detail="Only pending landlord verifications can be reviewed",
         )
 
+    previous_status = profile.verification_status
     if payload.approved:
         profile.verification_status = VerificationStatus.APPROVED.value
         profile.verified_at = datetime.now(timezone.utc)
@@ -114,6 +116,22 @@ async def decide_landlord_verification(
             profile.rejection_reason,
         )
 
+    add_audit_event(
+        db,
+        actor=admin,
+        action=(
+            "landlord.verification.approved"
+            if payload.approved
+            else "landlord.verification.rejected"
+        ),
+        entity_type="landlord_profile",
+        entity_id=profile.id,
+        details={
+            "user_id": user_id,
+            "from_status": previous_status,
+            "to_status": profile.verification_status,
+        },
+    )
     await db.commit()
     await db.refresh(profile)
     return profile
@@ -178,7 +196,7 @@ async def list_property_review_queue(
 @router.post("/properties/{property_id}/approve", response_model=PropertyRead)
 async def approve_property(
     property_id: uuid.UUID,
-    _: User = Depends(require_roles(UserRole.ADMIN.value)),
+    admin: User = Depends(require_roles(UserRole.ADMIN.value)),
     db: AsyncSession = Depends(get_db),
 ) -> Property:
     row = await _property(db, property_id)
@@ -187,6 +205,7 @@ async def approve_property(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only pending properties can be approved",
         )
+    previous_status = row.status
     row.status = PropertyStatus.APPROVED.value
     _notify(
         db,
@@ -195,6 +214,14 @@ async def approve_property(
         "Rental advert approved",
         f"{row.title} passed Mosala property review. The advertising charge can now be issued.",
         property_id=str(row.id),
+    )
+    add_audit_event(
+        db,
+        actor=admin,
+        action="property.approved",
+        entity_type="property",
+        entity_id=row.id,
+        details={"from_status": previous_status, "to_status": row.status, "owner_id": row.owner_id},
     )
     await db.commit()
     await db.refresh(row)
@@ -233,6 +260,7 @@ async def quote_advert_charge(
             detail="This advertising charge can no longer be changed",
         )
 
+    previous_status = charge.status if charge is not None else None
     now = datetime.now(timezone.utc)
     next_status = AdvertChargeStatus.WAIVED.value if payload.waive else AdvertChargeStatus.QUOTED.value
     amount = Decimal("0") if payload.waive else payload.amount
@@ -272,6 +300,19 @@ async def quote_advert_charge(
         message,
         property_id=str(row.id),
     )
+    add_audit_event(
+        db,
+        actor=admin,
+        action="advert_charge.waived" if payload.waive else "advert_charge.quoted",
+        entity_type="property",
+        entity_id=row.id,
+        details={
+            "from_status": previous_status,
+            "to_status": next_status,
+            "amount": amount,
+            "currency": "LSL",
+        },
+    )
     await db.commit()
     await db.refresh(charge)
     return charge
@@ -293,6 +334,7 @@ async def confirm_advert_charge_payment(
             status_code=status.HTTP_409_CONFLICT,
             detail="Advertising payment is not awaiting verification",
         )
+    previous_status = charge.status
     charge.status = AdvertChargeStatus.PAID.value
     charge.confirmed_by = admin.id
     charge.confirmed_at = datetime.now(timezone.utc)
@@ -306,6 +348,20 @@ async def confirm_advert_charge_payment(
         f"Mosala verified the advertising payment for {row.title}. The advert is ready for activation.",
         property_id=str(row.id),
     )
+    add_audit_event(
+        db,
+        actor=admin,
+        action="advert_charge.payment_confirmed",
+        entity_type="property",
+        entity_id=row.id,
+        details={
+            "from_status": previous_status,
+            "to_status": charge.status,
+            "amount": charge.amount,
+            "currency": charge.currency,
+            "payment_method": charge.payment_method,
+        },
+    )
     await db.commit()
     await db.refresh(charge)
     return charge
@@ -315,7 +371,7 @@ async def confirm_advert_charge_payment(
 async def reject_advert_charge_payment(
     property_id: uuid.UUID,
     payload: AdvertChargeDecision,
-    _: User = Depends(require_roles(UserRole.ADMIN.value)),
+    admin: User = Depends(require_roles(UserRole.ADMIN.value)),
     db: AsyncSession = Depends(get_db),
 ) -> AdvertCharge:
     row = await _property(db, property_id)
@@ -327,6 +383,7 @@ async def reject_advert_charge_payment(
             status_code=status.HTTP_409_CONFLICT,
             detail="Advertising payment is not awaiting verification",
         )
+    previous_status = charge.status
     charge.status = AdvertChargeStatus.PAYMENT_REJECTED.value
     charge.note = payload.note or "The advertising payment reference could not be verified"
     _notify(
@@ -337,6 +394,20 @@ async def reject_advert_charge_payment(
         charge.note,
         property_id=str(row.id),
     )
+    add_audit_event(
+        db,
+        actor=admin,
+        action="advert_charge.payment_rejected",
+        entity_type="property",
+        entity_id=row.id,
+        details={
+            "from_status": previous_status,
+            "to_status": charge.status,
+            "amount": charge.amount,
+            "currency": charge.currency,
+            "payment_method": charge.payment_method,
+        },
+    )
     await db.commit()
     await db.refresh(charge)
     return charge
@@ -345,7 +416,7 @@ async def reject_advert_charge_payment(
 @router.post("/properties/{property_id}/activate", response_model=PropertyRead)
 async def activate_property(
     property_id: uuid.UUID,
-    _: User = Depends(require_roles(UserRole.ADMIN.value)),
+    admin: User = Depends(require_roles(UserRole.ADMIN.value)),
     db: AsyncSession = Depends(get_db),
 ) -> Property:
     row = await _property(db, property_id)
@@ -363,6 +434,7 @@ async def activate_property(
             status_code=status.HTTP_409_CONFLICT,
             detail="Advertising charge must be paid or waived before activation",
         )
+    previous_status = row.status
     row.status = PropertyStatus.ACTIVE.value
     _notify(
         db,
@@ -372,6 +444,18 @@ async def activate_property(
         f"{row.title} is now active on the Mosala Rentals marketplace.",
         property_id=str(row.id),
     )
+    add_audit_event(
+        db,
+        actor=admin,
+        action="property.activated",
+        entity_type="property",
+        entity_id=row.id,
+        details={
+            "from_status": previous_status,
+            "to_status": row.status,
+            "advert_charge_status": charge.status,
+        },
+    )
     await db.commit()
     await db.refresh(row)
     return row
@@ -380,7 +464,7 @@ async def activate_property(
 @router.post("/properties/{property_id}/reject", response_model=PropertyRead)
 async def reject_property(
     property_id: uuid.UUID,
-    _: User = Depends(require_roles(UserRole.ADMIN.value)),
+    admin: User = Depends(require_roles(UserRole.ADMIN.value)),
     db: AsyncSession = Depends(get_db),
 ) -> Property:
     row = await _property(db, property_id)
@@ -392,6 +476,7 @@ async def reject_property(
             status_code=status.HTTP_409_CONFLICT,
             detail="Property is not in a reviewable state",
         )
+    previous_status = row.status
     row.status = PropertyStatus.REJECTED.value
     _notify(
         db,
@@ -400,6 +485,14 @@ async def reject_property(
         "Rental advert needs changes",
         f"{row.title} was returned for changes before it can be advertised.",
         property_id=str(row.id),
+    )
+    add_audit_event(
+        db,
+        actor=admin,
+        action="property.rejected",
+        entity_type="property",
+        entity_id=row.id,
+        details={"from_status": previous_status, "to_status": row.status, "owner_id": row.owner_id},
     )
     await db.commit()
     await db.refresh(row)
