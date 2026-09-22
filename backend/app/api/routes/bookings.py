@@ -21,6 +21,7 @@ from app.models.booking import (
     PaymentStatus,
 )
 from app.models.rental import Property, PropertyStatus, Unit, UnitStatus, User, UserRole
+from app.models.tenancy import Tenancy, TenancyStatus
 from app.schemas.booking import (
     BookingCreate,
     BookingDecision,
@@ -38,6 +39,10 @@ def _utcnow() -> datetime:
 
 def _hold_key(unit_id: uuid.UUID) -> str:
     return f"booking-hold:unit:{unit_id}"
+
+
+def _bookable_status(status_value: str) -> bool:
+    return status_value in {UnitStatus.AVAILABLE.value, UnitStatus.VACATING_SOON.value}
 
 
 def _notify(
@@ -76,6 +81,23 @@ def _history(
             actor_id=actor_id,
             note=note,
         )
+    )
+
+
+async def _release_unit_after_failed_booking(db: AsyncSession, unit: Unit) -> None:
+    notice = await db.scalar(
+        select(Tenancy).where(
+            Tenancy.unit_id == unit.id,
+            Tenancy.status == TenancyStatus.NOTICE_GIVEN.value,
+        )
+    )
+    if notice is None:
+        unit.status = UnitStatus.AVAILABLE.value
+        return
+    unit.status = (
+        UnitStatus.VACATING_SOON.value
+        if notice.allow_readvertise
+        else UnitStatus.NOTICE_GIVEN.value
     )
 
 
@@ -129,8 +151,8 @@ async def acquire_booking_hold(
     )
     if unit is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Available rental unit not found")
-    if unit.status != UnitStatus.AVAILABLE.value:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unit is not available")
+    if not _bookable_status(unit.status):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unit is not available for booking")
 
     acquired = bool(
         await redis.set(
@@ -176,8 +198,8 @@ async def create_booking(
     property_row = await db.get(Property, unit.property_id)
     if property_row is None or property_row.status != PropertyStatus.ACTIVE.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Property is not open for bookings")
-    if unit.status != UnitStatus.AVAILABLE.value:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unit is no longer available")
+    if not _bookable_status(unit.status):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unit is no longer available for booking")
     if unit.available_from is not None and payload.move_in_date < unit.available_from:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -399,7 +421,7 @@ async def reject_booking_payment(
 
     payment.status = PaymentStatus.REJECTED.value
     _history(db, booking, BookingStatus.REJECTED.value, admin.id, payload.note or "Payment rejected by admin")
-    unit.status = UnitStatus.AVAILABLE.value
+    await _release_unit_after_failed_booking(db, unit)
     property_row = await db.get(Property, unit.property_id)
     _notify(
         db,
@@ -415,7 +437,7 @@ async def reject_booking_payment(
             property_row.owner_id,
             "booking_released",
             "Rental unit released",
-            f"{unit.name} is available again after a booking payment was rejected.",
+            f"{unit.name} is available for booking again after a payment was rejected.",
             unit_id=str(unit.id),
         )
 
@@ -438,7 +460,7 @@ async def cancel_booking(
 
     unit = await db.scalar(select(Unit).where(Unit.id == booking.unit_id).with_for_update())
     if unit is not None:
-        unit.status = UnitStatus.AVAILABLE.value
+        await _release_unit_after_failed_booking(db, unit)
         property_row = await db.get(Property, unit.property_id)
         if property_row is not None:
             _notify(
@@ -446,7 +468,7 @@ async def cancel_booking(
                 property_row.owner_id,
                 "booking_cancelled",
                 "Booking cancelled",
-                f"The pending booking for {unit.name} was cancelled and the unit is available again.",
+                f"The pending booking for {unit.name} was cancelled and the unit can be offered again.",
                 unit_id=str(unit.id),
                 booking_id=str(booking.id),
             )
