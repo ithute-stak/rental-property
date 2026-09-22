@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rental_property/features/auth/presentation/session_cubit.dart';
+import 'package:rental_property/features/landlord/data/api_landlord_property_repository.dart';
+import 'package:rental_property/features/landlord/presentation/landlord_workspace_screen.dart';
 
 class AccountScreen extends StatelessWidget {
   const AccountScreen({super.key});
@@ -42,6 +44,18 @@ class AccountScreen extends StatelessWidget {
                           ? 'Manage verification and rental properties from your landlord workspace.'
                           : 'Save homes, request viewings and book available rooms.',
                     ),
+                    trailing: user.isLandlord ? const Icon(Icons.chevron_right_rounded) : null,
+                    onTap: user.isLandlord
+                        ? () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => LandlordWorkspaceScreen(
+                                  repository: ApiLandlordPropertyRepository.fromEnvironment(),
+                                ),
+                              ),
+                            );
+                          }
+                        : null,
                   ),
                 ),
                 const SizedBox(height: 16),
