@@ -90,6 +90,13 @@ The workflow will:
 
 The workflow does **not** automatically publish to Google Play. Keeping bundle generation and store publication separate gives Mosala a final approval point before a release reaches users.
 
-## CI release-smoke build
+## CI release-smoke builds
 
-Normal CI uses the same Android preparation script with a dummy Maps key and Flutter's generated debug signing for the release-smoke APK. This validates package identity, manifest configuration, Gradle/native plugin compatibility, and release compilation without exposing or requiring production secrets.
+Normal CI uses the same Android preparation script with a dummy Maps key and a **disposable release keystore generated inside the GitHub Actions runner**. That keystore is never used for production and is discarded with the runner.
+
+CI builds and validates both release package forms:
+
+1. a signed release APK for installation/device smoke testing; and
+2. a signed release App Bundle (`.aab`) to exercise the same Play Store packaging path used by the protected production workflow.
+
+The CI bundle is checked with `jarsigner`, given a SHA-256 checksum, and uploaded as a short-lived workflow artifact. This continuously validates package identity, manifest configuration, Gradle/native plugin compatibility, release signing configuration, APK packaging, and Play Store bundle packaging without exposing or requiring production secrets.
