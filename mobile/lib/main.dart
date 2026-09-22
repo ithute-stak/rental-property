@@ -7,6 +7,7 @@ import 'package:rental_property/features/feed/data/api_feed_repository.dart';
 import 'package:rental_property/features/feed/domain/feed_repository.dart';
 import 'package:rental_property/features/feed/presentation/bloc/feed_bloc.dart';
 import 'package:rental_property/features/feed/presentation/feed_screen.dart';
+import 'package:rental_property/features/realtime/presentation/realtime_event_listener.dart';
 
 void main() {
   runApp(
@@ -54,7 +55,7 @@ class RentalPropertyApp extends StatelessWidget {
             fillColor: Colors.white,
           ),
         ),
-        home: const FeedScreen(),
+        home: const RealtimeEventListener(child: FeedScreen()),
       ),
     );
   }
