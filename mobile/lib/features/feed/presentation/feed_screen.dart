@@ -4,6 +4,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:rental_property/features/auth/presentation/account_screen.dart';
 import 'package:rental_property/features/auth/presentation/session_cubit.dart';
+import 'package:rental_property/features/booking/data/api_booking_repository.dart';
+import 'package:rental_property/features/booking/presentation/booking_screens.dart';
 import 'package:rental_property/features/feed/domain/property_summary.dart';
 import 'package:rental_property/features/feed/presentation/bloc/feed_bloc.dart';
 
@@ -163,7 +165,16 @@ class _PropertyCard extends StatelessWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () {},
+        onTap: () {
+          Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => PropertyBookingScreen(
+                property: property,
+                repository: ApiBookingRepository.fromEnvironment(),
+              ),
+            ),
+          );
+        },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

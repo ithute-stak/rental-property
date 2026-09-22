@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:rental_property/features/auth/domain/app_user.dart';
 import 'package:rental_property/features/auth/presentation/session_cubit.dart';
+import 'package:rental_property/features/booking/data/api_booking_repository.dart';
+import 'package:rental_property/features/booking/presentation/booking_screens.dart';
 import 'package:rental_property/features/landlord/data/api_landlord_property_repository.dart';
 import 'package:rental_property/features/landlord/presentation/landlord_workspace_screen.dart';
 
@@ -16,60 +19,113 @@ class AccountScreen extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           ),
         SessionGuest(:final message) => _GuestAccountView(message: message),
-        SessionAuthenticated(:final user) => Scaffold(
-            appBar: const _AccountAppBar(),
-            body: ListView(
-              padding: const EdgeInsets.all(24),
-              children: [
-                const CircleAvatar(
-                  radius: 42,
-                  child: Icon(Icons.person_rounded, size: 42),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  user.displayName,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                Text(user.phone, textAlign: TextAlign.center),
-                if (user.email != null) Text(user.email!, textAlign: TextAlign.center),
-                const SizedBox(height: 20),
-                Card(
-                  child: ListTile(
-                    leading: Icon(user.isLandlord ? Icons.apartment_rounded : Icons.travel_explore_rounded),
-                    title: Text(user.isLandlord ? 'Landlord account' : 'House seeker account'),
-                    subtitle: Text(
-                      user.isLandlord
-                          ? 'Manage verification and rental properties from your landlord workspace.'
-                          : 'Save homes, request viewings and book available rooms.',
+        SessionAuthenticated(:final user) => _AuthenticatedAccountView(user: user),
+      },
+    );
+  }
+}
+
+class _AuthenticatedAccountView extends StatelessWidget {
+  const _AuthenticatedAccountView({required this.user});
+
+  final AppUser user;
+
+  @override
+  Widget build(BuildContext context) {
+    final isSeeker = user.role == 'house_seeker' || user.role == 'tenant';
+    final title = user.isAdmin
+        ? 'System administrator'
+        : user.isLandlord
+            ? 'Landlord account'
+            : 'House seeker account';
+    final subtitle = user.isAdmin
+        ? 'Verify submitted booking payments and control booking activation.'
+        : user.isLandlord
+            ? 'Manage verification, rental properties, photos and availability.'
+            : 'Manage your room bookings and payment verification status.';
+
+    return Scaffold(
+      appBar: const _AccountAppBar(),
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          const CircleAvatar(
+            radius: 42,
+            child: Icon(Icons.person_rounded, size: 42),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            user.displayName,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          Text(user.phone, textAlign: TextAlign.center),
+          if (user.email != null) Text(user.email!, textAlign: TextAlign.center),
+          const SizedBox(height: 20),
+          Card(
+            child: ListTile(
+              leading: Icon(
+                user.isAdmin
+                    ? Icons.admin_panel_settings_outlined
+                    : user.isLandlord
+                        ? Icons.apartment_rounded
+                        : Icons.travel_explore_rounded,
+              ),
+              title: Text(title),
+              subtitle: Text(subtitle),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                if (user.isAdmin) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AdminBookingReviewScreen(
+                        repository: ApiBookingRepository.fromEnvironment(),
+                      ),
                     ),
-                    trailing: user.isLandlord ? const Icon(Icons.chevron_right_rounded) : null,
-                    onTap: user.isLandlord
-                        ? () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => LandlordWorkspaceScreen(
-                                  repository: ApiLandlordPropertyRepository.fromEnvironment(),
-                                ),
-                              ),
-                            );
-                          }
-                        : null,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    await context.read<SessionCubit>().logout();
-                  },
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Sign out'),
-                ),
-              ],
+                  );
+                } else if (user.isLandlord) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => LandlordWorkspaceScreen(
+                        repository: ApiLandlordPropertyRepository.fromEnvironment(),
+                      ),
+                    ),
+                  );
+                } else if (isSeeker) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => MyBookingsScreen(
+                        repository: ApiBookingRepository.fromEnvironment(),
+                      ),
+                    ),
+                  );
+                }
+              },
             ),
           ),
-      },
+          if (isSeeker) ...[
+            const SizedBox(height: 10),
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.info_outline_rounded),
+                title: Text('Booking verification'),
+                subtitle: Text(
+                  'A room becomes booked only after Mosala confirms the submitted payment reference. Both you and the landlord are notified.',
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: () async {
+              await context.read<SessionCubit>().logout();
+            },
+            icon: const Icon(Icons.logout_rounded),
+            label: const Text('Sign out'),
+          ),
+        ],
+      ),
     );
   }
 }
