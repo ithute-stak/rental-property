@@ -2,6 +2,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:rental_property/features/auth/presentation/account_screen.dart';
+import 'package:rental_property/features/auth/presentation/session_cubit.dart';
 import 'package:rental_property/features/feed/domain/property_summary.dart';
 import 'package:rental_property/features/feed/presentation/bloc/feed_bloc.dart';
 
@@ -22,6 +24,21 @@ class FeedScreen extends StatelessWidget {
         ),
         actions: [
           IconButton(onPressed: () {}, icon: const Icon(Icons.notifications_none_rounded)),
+          BlocBuilder<SessionCubit, SessionState>(
+            builder: (context, state) => IconButton(
+              tooltip: state is SessionAuthenticated ? 'My account' : 'Sign in',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const AccountScreen()),
+                );
+              },
+              icon: Icon(
+                state is SessionAuthenticated
+                    ? Icons.account_circle_rounded
+                    : Icons.person_outline_rounded,
+              ),
+            ),
+          ),
         ],
       ),
       body: Column(

@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rental_property/features/auth/domain/app_user.dart';
+import 'package:rental_property/features/auth/domain/auth_repository.dart';
 import 'package:rental_property/features/feed/domain/feed_repository.dart';
 import 'package:rental_property/features/feed/domain/property_summary.dart';
 import 'package:rental_property/main.dart';
@@ -21,10 +23,37 @@ class _FakeFeedRepository implements FeedRepository {
   }
 }
 
+class _FakeAuthRepository implements AuthRepository {
+  @override
+  Future<AppUser?> restoreSession() async => null;
+
+  @override
+  Future<AppUser> login({required String identifier, required String password}) {
+    throw const AuthException('Not used by this test');
+  }
+
+  @override
+  Future<AppUser> register({
+    required String displayName,
+    required String phone,
+    String? email,
+    required String password,
+    required String role,
+  }) {
+    throw const AuthException('Not used by this test');
+  }
+
+  @override
+  Future<void> logout() async {}
+}
+
 void main() {
   testWidgets('feed loads Mosala branding and API-backed property state', (tester) async {
     await tester.pumpWidget(
-      RentalPropertyApp(feedRepository: _FakeFeedRepository()),
+      RentalPropertyApp(
+        feedRepository: _FakeFeedRepository(),
+        authRepository: _FakeAuthRepository(),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -32,6 +61,7 @@ void main() {
     expect(find.text('Built by Ithute Digital Solutions'), findsOneWidget);
     expect(find.text('Modern room in Maseru'), findsOneWidget);
     expect(find.text('2 available'), findsOneWidget);
+    expect(find.byTooltip('Sign in'), findsOneWidget);
   });
 
   test('property summary accepts decimal rent encoded as a string', () {
