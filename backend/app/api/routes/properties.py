@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_optional_user, require_roles
 from app.core.database import get_db
+from app.core.storage import storage
+from app.models.media import PropertyMedia
 from app.models.rental import (
     LandlordProfile,
     Property,
@@ -109,9 +111,21 @@ async def property_feed(
     available_statuses = [UnitStatus.AVAILABLE.value, UnitStatus.VACATING_SOON.value]
     available_rooms = func.count(Unit.id).label("available_rooms")
     monthly_rent = func.min(Unit.monthly_rent).label("monthly_rent")
+    cover_object_key = (
+        select(PropertyMedia.object_key)
+        .where(
+            PropertyMedia.property_id == Property.id,
+            PropertyMedia.is_cover.is_(True),
+        )
+        .order_by(PropertyMedia.created_at)
+        .limit(1)
+        .correlate(Property)
+        .scalar_subquery()
+        .label("cover_object_key")
+    )
 
     query = (
-        select(Property, available_rooms, monthly_rent)
+        select(Property, available_rooms, monthly_rent, cover_object_key)
         .join(Unit, Unit.property_id == Property.id)
         .where(
             Property.status == PropertyStatus.ACTIVE.value,
@@ -159,9 +173,9 @@ async def property_feed(
             security_level=property_row.security_level,
             monthly_rent=rent,
             available_rooms=room_count,
-            image_url=None,
+            image_url=storage.public_url(cover_key) if cover_key else None,
         )
-        for property_row, room_count, rent in result.all()
+        for property_row, room_count, rent, cover_key in result.all()
     ]
 
 
