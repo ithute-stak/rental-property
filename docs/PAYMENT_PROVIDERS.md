@@ -45,10 +45,22 @@ The callback does **not** automatically confirm funds, activate adverts, book un
 
 Late payments, amount/currency mismatches, transaction-reference conflicts, payments against invalid business states, and provider-reported refunds are recorded as `manual_review` and surfaced to administrators for reconciliation. Pending/failed/cancelled callbacks are recorded without changing the rental state so legitimate retries remain possible.
 
+## Admin reconciliation queue
+
+Provider callbacks that require human reconciliation are available only to Mosala administrators under `/api/v1/admin/payment-reconciliation`.
+
+- `GET /events` returns the manual-review queue by default and supports provider, source type, source id, status, limit and offset filters.
+- `GET /events/{event_id}` returns one normalized provider event.
+- `POST /events/{event_id}/resolve` closes a `manual_review` case with a required reconciliation note.
+
+Resolution never changes a booking, advert charge, tenancy, ledger entry or payment confirmation by itself. An administrator must use the existing business-specific verification action when funds genuinely need to be confirmed or rejected. Resolving the provider event only records that the exception was investigated.
+
+A resolved event stores the resolver, resolution timestamp and note, while preserving the original processing reason. The action also creates an audit event named `payment_provider.reconciliation_resolved`. Raw provider payloads and payload hashes are intentionally not exposed by the admin reconciliation API.
+
 ## Adding a real provider
 
 Implement `PaymentProviderAdapter.verify_and_parse`, then register it under a stable lowercase provider name during application startup. Provider-specific secrets belong in protected production environment variables/secrets, never in Git.
 
-Before enabling a production adapter, add contract tests using the provider's documented signature algorithm and representative sanitized webhook fixtures. Test at least valid signature, invalid signature, exact replay, altered replay, paid callback, amount mismatch, late payment, refund, and provider retry behavior.
+Before enabling a production adapter, add contract tests using the provider's documented signature algorithm and representative sanitized webhook fixtures. Test at least valid signature, invalid signature, exact replay, altered replay, paid callback, amount mismatch, late payment, refund, provider retry behavior and reconciliation visibility.
 
 The generic webhook infrastructure intentionally contains no Lesotho provider credentials or guessed API contract. Add a concrete adapter only from the provider's official integration documentation and issued merchant credentials.
