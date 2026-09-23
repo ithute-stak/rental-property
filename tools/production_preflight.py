@@ -172,6 +172,18 @@ def validate_server_environment(values: dict[str, str]) -> None:
     if api_domain == media_domain:
         _fail("API_DOMAIN and MEDIA_DOMAIN must be different hostnames")
 
+    api_host_bind = _require(values, "API_HOST_BIND")
+    try:
+        bind_address = ipaddress.ip_address(api_host_bind)
+    except ValueError as exc:
+        raise PreflightError("API_HOST_BIND must be a loopback IP address") from exc
+    if not bind_address.is_loopback:
+        _fail("API_HOST_BIND must be loopback-only so the raw API cannot bypass Caddy/TLS")
+
+    api_host_port = _require(values, "API_HOST_PORT")
+    if not api_host_port.isdigit() or not 1 <= int(api_host_port) <= 65535:
+        _fail("API_HOST_PORT must be an integer between 1 and 65535")
+
     tls_email = _require(values, "TLS_EMAIL")
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", tls_email):
         _fail("TLS_EMAIL is invalid")
