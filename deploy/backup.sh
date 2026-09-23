@@ -30,6 +30,8 @@ echo "Mirroring MinIO bucket to a private staging directory"
 docker run --rm \
   --network "$NETWORK_NAME" \
   --env-file "$ENV_FILE" \
+  --env BACKUP_HOST_UID="$(id -u)" \
+  --env BACKUP_HOST_GID="$(id -g)" \
   -v "$MEDIA_STAGE:/backup" \
   --entrypoint /bin/sh \
   "$MC_IMAGE" \
@@ -38,6 +40,7 @@ docker run --rm \
       sleep 2
     done
     mc mirror --overwrite source/"$OBJECT_STORAGE_BUCKET" /backup
+    chown -R "$BACKUP_HOST_UID:$BACKUP_HOST_GID" /backup
   '
 
 tar -czf "$DEST/media.tar.gz" -C "$MEDIA_STAGE" .
