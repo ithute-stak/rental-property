@@ -12,12 +12,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      ENV_FILE: ${{ runner.temp }}/mosala-dr.env
-      BACKUP_ROOT: ${{ runner.temp }}/mosala-backups
       COMPOSE_FILE: docker-compose.prod.yml
       MC_IMAGE: minio/mc:RELEASE.2025-04-16T18-13-26Z
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare isolated rehearsal paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ENV_FILE=${RUNNER_TEMP}/mosala-dr.env" >> "$GITHUB_ENV"
+          echo "BACKUP_ROOT=${RUNNER_TEMP}/mosala-backups" >> "$GITHUB_ENV"
 
       - name: Create isolated production-shaped environment
         shell: bash
