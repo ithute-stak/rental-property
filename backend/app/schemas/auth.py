@@ -30,7 +30,7 @@ class UserRead(BaseModel):
 
     id: uuid.UUID
     email: str | None
-    phone: str
+    phone: str | None
     display_name: str
     role: str
     is_active: bool
