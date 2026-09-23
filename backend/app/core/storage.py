@@ -22,8 +22,18 @@ class ObjectStorage:
             region_name=settings.object_storage_region,
             aws_access_key_id=settings.object_storage_access_key,
             aws_secret_access_key=settings.object_storage_secret_key,
-            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": "path"},
+                connect_timeout=2,
+                read_timeout=2,
+                retries={"max_attempts": 1, "mode": "standard"},
+            ),
         )
+
+    def check_ready(self) -> None:
+        """Verify that the configured media bucket is reachable with current credentials."""
+        self._client.head_bucket(Bucket=settings.object_storage_bucket)
 
     def create_property_upload(self, property_id: uuid.UUID, content_type: str) -> tuple[str, str]:
         extension = _ALLOWED_IMAGE_TYPES.get(content_type)

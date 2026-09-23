@@ -1,9 +1,12 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import SessionFactory
 from app.core.redis import get_redis
+from app.core.storage import storage
 
 router = APIRouter()
 
@@ -30,10 +33,16 @@ async def readiness() -> dict[str, str]:
         redis_ok = await get_redis().ping()
         if not redis_ok:
             raise RuntimeError("Redis ping failed")
+        await asyncio.wait_for(asyncio.to_thread(storage.check_ready), timeout=3.0)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service dependencies are not ready",
         ) from exc
 
-    return {"status": "ready", "database": "ok", "redis": "ok"}
+    return {
+        "status": "ready",
+        "database": "ok",
+        "redis": "ok",
+        "object_storage": "ok",
+    }
