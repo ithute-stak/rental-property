@@ -31,6 +31,10 @@ if [[ ${#MOSALA_ADMIN_PASSWORD} -lt 8 ]]; then
   exit 1
 fi
 
+# Export the secret so Compose can pass it by variable name only. This keeps the
+# password out of Docker/Compose command-line arguments and shell history.
+export MOSALA_ADMIN_PASSWORD
+
 cleanup() {
   unset MOSALA_ADMIN_PASSWORD
 }
@@ -45,11 +49,11 @@ if [[ "$UPDATE_EXISTING" == "true" ]]; then
   args+=(--update-existing)
 fi
 
-# Run inside the production application image so the password exists only in this
-# one process environment and is never written to the repository or env file.
+# Run inside the production application image. The password exists only in the
+# transient process environment and is never written to the repository or env file.
 docker compose \
   --env-file "$ENV_FILE" \
   -f "$COMPOSE_FILE" \
   run --rm \
-  -e MOSALA_ADMIN_PASSWORD="$MOSALA_ADMIN_PASSWORD" \
+  -e MOSALA_ADMIN_PASSWORD \
   api "${args[@]}"

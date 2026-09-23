@@ -76,15 +76,26 @@ class ProductionPreflightTests(unittest.TestCase):
         with self.assertRaises(PreflightError):
             validate_server_environment(values)
 
-    def test_android_release_passes_with_production_shaped_inputs(self) -> None:
+    def test_android_release_passes_with_mama_production_api(self) -> None:
         validate_android_release(
-            api_base_url="https://api.mosala.co.ls/api/v1",
+            api_base_url="https://api.mama.ithute.co.ls/api/v1",
             version_name="1.2.3",
             version_code="42",
             application_id="ls.co.mosala.rentals",
             environment=self.android_environment(),
             require_google_play=True,
         )
+
+    def test_android_release_rejects_other_valid_api_domain(self) -> None:
+        with self.assertRaisesRegex(PreflightError, "api.mama.ithute.co.ls"):
+            validate_android_release(
+                api_base_url="https://api.other.co.ls/api/v1",
+                version_name="1.2.3",
+                version_code="42",
+                application_id="ls.co.mosala.rentals",
+                environment=self.android_environment(),
+                require_google_play=False,
+            )
 
     def test_android_release_rejects_placeholder_api_domain(self) -> None:
         with self.assertRaises(PreflightError):
@@ -100,7 +111,7 @@ class ProductionPreflightTests(unittest.TestCase):
     def test_android_release_rejects_wrong_application_id(self) -> None:
         with self.assertRaisesRegex(PreflightError, "locked"):
             validate_android_release(
-                api_base_url="https://api.mosala.co.ls/api/v1",
+                api_base_url="https://api.mama.ithute.co.ls/api/v1",
                 version_name="1.2.3",
                 version_code="42",
                 application_id="ls.co.other.app",
@@ -113,7 +124,7 @@ class ProductionPreflightTests(unittest.TestCase):
         environment["GOOGLE_MAPS_API_KEY"] = "ci-placeholder-not-for-production"
         with self.assertRaises(PreflightError):
             validate_android_release(
-                api_base_url="https://api.mosala.co.ls/api/v1",
+                api_base_url="https://api.mama.ithute.co.ls/api/v1",
                 version_name="1.2.3",
                 version_code="42",
                 application_id="ls.co.mosala.rentals",
