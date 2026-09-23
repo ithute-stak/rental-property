@@ -29,6 +29,7 @@ prod-up: prod-validate
 	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d --build
 
 prod-pull-validate: prod-preflight
+	python3 tools/validate_api_image.py --env-file deploy/.env.production
 	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml -f docker-compose.vps.yml config >/dev/null
 
 prod-pull-up: prod-pull-validate
