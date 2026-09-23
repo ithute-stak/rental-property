@@ -1,0 +1,59 @@
+name: Backend API Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-image.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build immutable backend image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/ithute-stak/rental-property-api"
+          docker build --pull \
+            --label org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+            --label org.opencontainers.image.revision="${GITHUB_SHA}" \
+            -t "${image}:${GITHUB_SHA}" \
+            -t "${image}:main" \
+            ./backend
+
+      - name: Smoke test container identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/ithute-stak/rental-property-api:${GITHUB_SHA}"
+          test "$(docker run --rm --entrypoint id "$image" -u)" != "0"
+
+      - name: Push immutable and main tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/ithute-stak/rental-property-api"
+          docker push "${image}:${GITHUB_SHA}"
+          docker push "${image}:main"
+
+      - name: Record image reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Published ghcr.io/ithute-stak/rental-property-api:${GITHUB_SHA}"

@@ -1,4 +1,4 @@
-.PHONY: infra-up infra-down api-install api-run api-test migrate prod-preflight prod-validate prod-up prod-down prod-status prod-backup
+.PHONY: infra-up infra-down api-install api-run api-test migrate prod-preflight prod-validate prod-up prod-down prod-status prod-backup prod-pull-validate prod-pull-up
 
 infra-up:
 	docker compose up -d db redis
@@ -27,6 +27,15 @@ prod-validate: prod-preflight
 
 prod-up: prod-validate
 	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d --build
+
+prod-pull-validate: prod-preflight
+	python3 tools/validate_api_image.py --env-file deploy/.env.production
+	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml -f docker-compose.vps.yml config >/dev/null
+
+prod-pull-up: prod-pull-validate
+	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml -f docker-compose.vps.yml pull migrate api worker
+	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml build minio
+	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --no-build
 
 prod-down:
 	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml down
