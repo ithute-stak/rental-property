@@ -1,4 +1,4 @@
-.PHONY: infra-up infra-down api-install api-run api-test migrate prod-validate prod-up prod-down prod-status prod-backup
+.PHONY: infra-up infra-down api-install api-run api-test migrate prod-preflight prod-validate prod-up prod-down prod-status prod-backup
 
 infra-up:
 	docker compose up -d db redis
@@ -18,11 +18,14 @@ api-test:
 migrate:
 	cd backend && alembic upgrade head
 
-prod-validate:
-	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml config >/dev/null
-	bash -n deploy/backup.sh deploy/restore.sh
+prod-preflight:
+	python3 tools/production_preflight.py server --env-file deploy/.env.production
 
-prod-up:
+prod-validate: prod-preflight
+	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml config >/dev/null
+	bash -n deploy/backup.sh deploy/restore.sh deploy/smoke.sh
+
+prod-up: prod-validate
 	docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d --build
 
 prod-down:
