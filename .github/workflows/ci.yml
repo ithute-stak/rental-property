@@ -38,6 +38,15 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v4
+      - name: Validate production preflight rules
+        run: |
+          python3 -m py_compile tools/production_preflight.py tools/test_production_preflight.py
+          python3 tools/test_production_preflight.py
+          if python3 tools/production_preflight.py server --env-file deploy/.env.production.example; then
+            echo "::error::The documented placeholder production env unexpectedly passed preflight"
+            exit 1
+          fi
+          echo "Placeholder production env was rejected as expected"
       - name: Validate development Docker Compose
         run: docker compose config >/dev/null
       - name: Validate production Docker Compose
