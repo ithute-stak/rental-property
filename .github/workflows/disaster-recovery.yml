@@ -1,0 +1,170 @@
+name: Disaster Recovery Rehearsal
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+
+jobs:
+  backup-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ENV_FILE: ${{ runner.temp }}/mosala-dr.env
+      BACKUP_ROOT: ${{ runner.temp }}/mosala-backups
+      COMPOSE_FILE: docker-compose.prod.yml
+      MC_IMAGE: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create isolated production-shaped environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$ENV_FILE" <<EOF
+          API_DOMAIN=api.dr.invalid
+          MEDIA_DOMAIN=media.dr.invalid
+          TLS_EMAIL=dr@example.invalid
+          APP_VERSION=0.1.0
+          RELEASE_SHA=${GITHUB_SHA}
+          CORS_ORIGINS=https://app.dr.invalid
+          POSTGRES_DB=mosala_rentals
+          POSTGRES_USER=mosala
+          POSTGRES_PASSWORD=4b766f73616c612d64722d706f7374677265732d70617373776f72642d303031
+          REDIS_PASSWORD=4b766f73616c612d64722d72656469732d70617373776f72642d303031303031
+          AUTH_SECRET_KEY=4b766f73616c612d64722d617574682d7365637265742d6b65792d3030313031
+          OBJECT_STORAGE_REGION=us-east-1
+          OBJECT_STORAGE_BUCKET=mosala-rentals
+          OBJECT_STORAGE_ACCESS_KEY=mosala-storage
+          OBJECT_STORAGE_SECRET_KEY=mosala-dr-object-storage-secret-001
+          OBJECT_STORAGE_PUBLIC_BASE_URL=https://media.dr.invalid/mosala-rentals
+          EOF
+          chmod 600 "$ENV_FILE"
+
+      - name: Start isolated durable services
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d db redis minio minio-init
+          for _ in $(seq 1 60); do
+            if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T db \
+              sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready" >&2
+          exit 1
+
+      - name: Seed database and media sentinels
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T db \
+            sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+          CREATE TABLE dr_restore_sentinel (
+            id integer PRIMARY KEY,
+            value text NOT NULL
+          );
+          INSERT INTO dr_restore_sentinel (id, value) VALUES (1, 'original');
+          SQL
+
+          printf '%s' 'original-media' > "${RUNNER_TEMP}/original-media.txt"
+          docker run --rm \
+            --network mosala-rentals_default \
+            --env-file "$ENV_FILE" \
+            -v "${RUNNER_TEMP}/original-media.txt:/seed/original-media.txt:ro" \
+            --entrypoint /bin/sh \
+            "$MC_IMAGE" \
+            -c '
+              until mc alias set target http://minio:9000 "$OBJECT_STORAGE_ACCESS_KEY" "$OBJECT_STORAGE_SECRET_KEY" >/dev/null 2>&1; do sleep 2; done
+              mc mb --ignore-existing target/"$OBJECT_STORAGE_BUCKET" >/dev/null
+              mc cp /seed/original-media.txt target/"$OBJECT_STORAGE_BUCKET"/dr/sentinel.txt >/dev/null
+            '
+
+      - name: Create real backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENV_FILE="$ENV_FILE" BACKUP_ROOT="$BACKUP_ROOT" bash deploy/backup.sh
+          BACKUP_DIR="$(readlink -f "$BACKUP_ROOT/latest")"
+          test -d "$BACKUP_DIR"
+          echo "BACKUP_DIR=$BACKUP_DIR" >> "$GITHUB_ENV"
+          test -s "$BACKUP_DIR/postgres.dump"
+          test -s "$BACKUP_DIR/media.tar.gz"
+          (cd "$BACKUP_DIR" && sha256sum -c SHA256SUMS)
+
+      - name: Mutate both durable stores after backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T db \
+            sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+          UPDATE dr_restore_sentinel SET value = 'mutated' WHERE id = 1;
+          SQL
+
+          printf '%s' 'mutated-media' > "${RUNNER_TEMP}/mutated-media.txt"
+          printf '%s' 'must-be-removed' > "${RUNNER_TEMP}/stray-media.txt"
+          docker run --rm \
+            --network mosala-rentals_default \
+            --env-file "$ENV_FILE" \
+            -v "${RUNNER_TEMP}/mutated-media.txt:/seed/mutated-media.txt:ro" \
+            -v "${RUNNER_TEMP}/stray-media.txt:/seed/stray-media.txt:ro" \
+            --entrypoint /bin/sh \
+            "$MC_IMAGE" \
+            -c '
+              mc alias set target http://minio:9000 "$OBJECT_STORAGE_ACCESS_KEY" "$OBJECT_STORAGE_SECRET_KEY" >/dev/null
+              mc cp /seed/mutated-media.txt target/"$OBJECT_STORAGE_BUCKET"/dr/sentinel.txt >/dev/null
+              mc cp /seed/stray-media.txt target/"$OBJECT_STORAGE_BUCKET"/dr/stray.txt >/dev/null
+            '
+
+      - name: Restore the backup with public services kept stopped
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONFIRM_RESTORE=YES \
+          START_APPLICATION_SERVICES=false \
+          ENV_FILE="$ENV_FILE" \
+          bash deploy/restore.sh "$BACKUP_DIR"
+
+      - name: Verify database and media were actually restored
+        shell: bash
+        run: |
+          set -euo pipefail
+          db_value="$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T db \
+            sh -c 'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT value FROM dr_restore_sentinel WHERE id = 1"' | tr -d '\r')"
+          test "$db_value" = "original"
+
+          media_value="$(docker run --rm \
+            --network mosala-rentals_default \
+            --env-file "$ENV_FILE" \
+            --entrypoint /bin/sh \
+            "$MC_IMAGE" \
+            -c '
+              mc alias set target http://minio:9000 "$OBJECT_STORAGE_ACCESS_KEY" "$OBJECT_STORAGE_SECRET_KEY" >/dev/null
+              mc cat target/"$OBJECT_STORAGE_BUCKET"/dr/sentinel.txt
+            ')"
+          test "$media_value" = "original-media"
+
+          if docker run --rm \
+            --network mosala-rentals_default \
+            --env-file "$ENV_FILE" \
+            --entrypoint /bin/sh \
+            "$MC_IMAGE" \
+            -c '
+              mc alias set target http://minio:9000 "$OBJECT_STORAGE_ACCESS_KEY" "$OBJECT_STORAGE_SECRET_KEY" >/dev/null
+              mc stat target/"$OBJECT_STORAGE_BUCKET"/dr/stray.txt >/dev/null 2>&1
+            '; then
+            echo "Object created after the backup survived restore unexpectedly" >&2
+            exit 1
+          fi
+
+          echo "Disaster-recovery rehearsal passed: PostgreSQL and object storage returned to the backed-up state."
+
+      - name: Cleanup rehearsal stack
+        if: always()
+        shell: bash
+        run: |
+          docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down -v --remove-orphans || true
