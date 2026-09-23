@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/deploy/.env.production}"
 BACKUP_ROOT="${BACKUP_ROOT:-$ROOT_DIR/backups}"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.prod.yml"
-MC_IMAGE="minio/mc:RELEASE.2025-04-16T18-13-26Z"
+MC_IMAGE="quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
 NETWORK_NAME="mosala-rentals_default"
 
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -30,6 +30,8 @@ echo "Mirroring MinIO bucket to a private staging directory"
 docker run --rm \
   --network "$NETWORK_NAME" \
   --env-file "$ENV_FILE" \
+  --env BACKUP_HOST_UID="$(id -u)" \
+  --env BACKUP_HOST_GID="$(id -g)" \
   -v "$MEDIA_STAGE:/backup" \
   --entrypoint /bin/sh \
   "$MC_IMAGE" \
@@ -38,6 +40,7 @@ docker run --rm \
       sleep 2
     done
     mc mirror --overwrite source/"$OBJECT_STORAGE_BUCKET" /backup
+    chown -R "$BACKUP_HOST_UID:$BACKUP_HOST_GID" /backup
   '
 
 tar -czf "$DEST/media.tar.gz" -C "$MEDIA_STAGE" .

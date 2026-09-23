@@ -4,12 +4,17 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/deploy/.env.production}"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.prod.yml"
-MC_IMAGE="minio/mc:RELEASE.2025-04-16T18-13-26Z"
+MC_IMAGE="quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
 NETWORK_NAME="mosala-rentals_default"
 BACKUP_DIR="${1:-$ROOT_DIR/backups/latest}"
+START_APPLICATION_SERVICES="${START_APPLICATION_SERVICES:-true}"
 
 if [[ "${CONFIRM_RESTORE:-}" != "YES" ]]; then
   echo "Refusing restore. Re-run with CONFIRM_RESTORE=YES after verifying the backup and maintenance window." >&2
+  exit 1
+fi
+if [[ "$START_APPLICATION_SERVICES" != "true" && "$START_APPLICATION_SERVICES" != "false" ]]; then
+  echo "START_APPLICATION_SERVICES must be true or false" >&2
   exit 1
 fi
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -78,7 +83,10 @@ docker run --rm \
 echo "Applying any migrations newer than the backup"
 compose run --rm migrate
 
-echo "Starting application services"
-compose up -d api worker caddy
-
-echo "Restore completed. Verify the public /api/v1/health/ready endpoint before reopening traffic."
+if [[ "$START_APPLICATION_SERVICES" == "true" ]]; then
+  echo "Starting application services"
+  compose up -d api worker caddy
+  echo "Restore completed. Verify the public /api/v1/health/ready endpoint before reopening traffic."
+else
+  echo "Restore completed with application services intentionally left stopped."
+fi
