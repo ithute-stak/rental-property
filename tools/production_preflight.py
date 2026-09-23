@@ -22,6 +22,7 @@ APPLICATION_ID_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,62}$")
 BUCKET_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 MAPS_KEY_RE = re.compile(r"^AIza[0-9A-Za-z_-]{30,}$")
+PRODUCTION_API_DOMAIN = "api.mama.ithute.co.ls"
 
 RESERVED_SUFFIXES = (".example", ".invalid", ".test", ".localhost")
 PLACEHOLDER_MARKERS = (
@@ -93,7 +94,13 @@ def _validate_https_url(value: str, name: str, *, expected_host: str | None = No
 
 
 def validate_api_base_url(value: str) -> None:
-    parsed = urlparse(_validate_https_url(value, "production API base URL"))
+    parsed = urlparse(
+        _validate_https_url(
+            value,
+            "production API base URL",
+            expected_host=PRODUCTION_API_DOMAIN,
+        )
+    )
     if parsed.path.rstrip("/") != "/api/v1":
         _fail("production API base URL must end exactly in /api/v1")
 
