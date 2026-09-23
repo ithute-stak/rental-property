@@ -40,4 +40,6 @@ class PaymentProviderEventRead(BaseModel):
 
 
 class PaymentProviderResolution(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     note: str = Field(min_length=3, max_length=1000)
