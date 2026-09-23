@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/deploy/.env.production}"
 BACKUP_ROOT="${BACKUP_ROOT:-$ROOT_DIR/backups}"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.prod.yml"
-MC_IMAGE="minio/mc:RELEASE.2025-04-16T18-13-26Z"
+MC_IMAGE="quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
 NETWORK_NAME="mosala-rentals_default"
 
 if [[ ! -f "$ENV_FILE" ]]; then
