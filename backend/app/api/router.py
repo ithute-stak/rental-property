@@ -13,6 +13,7 @@ from app.api.routes import (
     media,
     messaging,
     notifications,
+    payment_reconciliation,
     payment_webhooks,
     properties,
     realtime,
@@ -34,5 +35,10 @@ api_router.include_router(messaging.router, prefix="/messaging", tags=["messagin
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(
+    payment_reconciliation.router,
+    prefix="/admin/payment-reconciliation",
+    tags=["admin-payment-reconciliation"],
+)
 api_router.include_router(audit.router, prefix="/admin/audit", tags=["admin-audit"])
 api_router.include_router(realtime.router, tags=["realtime"])
