@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/deploy/.env.production}"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.prod.yml"
-MC_IMAGE="minio/mc:RELEASE.2025-04-16T18-13-26Z"
+MC_IMAGE="quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z"
 NETWORK_NAME="mosala-rentals_default"
 BACKUP_DIR="${1:-$ROOT_DIR/backups/latest}"
 START_APPLICATION_SERVICES="${START_APPLICATION_SERVICES:-true}"
