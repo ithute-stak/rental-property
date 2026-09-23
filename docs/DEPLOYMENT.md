@@ -31,27 +31,31 @@ openssl rand -hex 48   # AUTH_SECRET_KEY
 openssl rand -hex 32   # MinIO secret
 ```
 
-Set the real API/media domains, TLS email, browser CORS origins and storage public URL. `OBJECT_STORAGE_PUBLIC_BASE_URL` should normally be `https://<MEDIA_DOMAIN>/<OBJECT_STORAGE_BUCKET>`.
+Use different generated values for PostgreSQL, Redis, authentication and object storage. Set the real API/media domains, TLS email, browser CORS origins and storage public URL. `OBJECT_STORAGE_PUBLIC_BASE_URL` should normally be `https://<MEDIA_DOMAIN>/<OBJECT_STORAGE_BUCKET>`.
 
-Set `APP_VERSION` to the human release version and `RELEASE_SHA` to the exact Git commit deployed. The liveness endpoint exposes both values so an operator can immediately confirm which build is serving traffic.
+Set `APP_VERSION` to the human release version and `RELEASE_SHA` to the exact full 40-character Git commit deployed. The liveness endpoint exposes both values so an operator can immediately confirm which build is serving traffic.
 
 ## 3. Validate before starting
 
+Production deployment is fail-closed. Run:
+
 ```bash
-docker compose --env-file deploy/.env.production -f docker-compose.prod.yml config >/dev/null
-bash -n deploy/backup.sh deploy/restore.sh deploy/smoke.sh
+make prod-validate
 ```
 
-CI also validates the Caddyfile with the same Caddy image used in production.
+The validation target first runs `tools/production_preflight.py`. It rejects placeholder/example domains, local or reserved hostnames, invalid release identity, non-HTTPS public URLs/CORS origins, weak or reused production secrets, mismatched media storage URLs and malformed production values. It then validates Docker Compose and deployment-script syntax.
+
+The checked-in `deploy/.env.production.example` is documentation only and is intentionally expected to fail production preflight until every placeholder has been replaced in `deploy/.env.production`.
+
+CI tests both successful and rejected preflight cases and also validates the Caddyfile with the same Caddy image used in production.
 
 ## 4. Start the platform
 
 ```bash
-docker compose --env-file deploy/.env.production -f docker-compose.prod.yml build
-docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d
+make prod-up
 ```
 
-The one-shot `migrate` service runs Alembic before the API/worker start. MinIO initialization creates the configured media bucket and enables public object download for listing images.
+`prod-up` depends on `prod-validate`, so the production stack cannot be started through the supported Make target without passing preflight first. The one-shot `migrate` service runs Alembic before the API/worker start. MinIO initialization creates the configured media bucket and enables public object download for listing images.
 
 Verify liveness and readiness through the public API domain:
 
@@ -77,14 +81,18 @@ The command prompts for the password rather than exposing it in shell history.
 
 ## 6. Build the Flutter client against production
 
-The mobile app accepts the API base URL at build time:
+The supported Android production path is the protected **Android Production Release** GitHub Actions workflow. It requires the protected production API base URL, Google Maps key, Android upload keystore/signing credentials and, when publishing, the Google Play service-account credential.
+
+Before Java/Flutter build setup begins, the workflow runs the same production preflight rules. It rejects placeholder or reserved API hosts, malformed/non-production Google Maps keys, missing signing secrets, the wrong Android application ID, invalid versions and malformed Google Play service-account JSON. Production Android releases are locked to `ls.co.mosala.rentals`.
+
+For local development or non-production smoke builds, the mobile app still accepts the API base URL at build time:
 
 ```bash
 flutter build apk --release \
   --dart-define=API_BASE_URL=https://YOUR_API_DOMAIN/api/v1
 ```
 
-Use the equivalent `flutter build appbundle`, `flutter build ios`, or web build command for the target release channel. The realtime client derives `wss://` from the same production API base URL.
+Do not treat a locally built bundle as the Play production candidate unless it came through the protected signed release workflow. The realtime client derives `wss://` from the same production API base URL.
 
 ## 7. Routine deployment/update
 
@@ -98,10 +106,11 @@ git pull --ff-only origin main
 Update `RELEASE_SHA` in `deploy/.env.production` to the output of `git rev-parse HEAD`, update `APP_VERSION` when the release version changes, then continue:
 
 ```bash
-docker compose --env-file deploy/.env.production -f docker-compose.prod.yml build
-docker compose --env-file deploy/.env.production -f docker-compose.prod.yml up -d
+make prod-up
 bash deploy/smoke.sh
 ```
+
+Because `make prod-up` always runs `prod-validate` first, a stale placeholder, malformed production URL, weak/reused secret or invalid release identity stops the update before containers are rebuilt.
 
 The smoke script verifies HTTPS liveness, dependency readiness, request-ID propagation, HSTS, the public property feed, and unauthenticated access control on `/auth/me`.
 
