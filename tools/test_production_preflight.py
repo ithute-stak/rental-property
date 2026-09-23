@@ -12,6 +12,8 @@ class ProductionPreflightTests(unittest.TestCase):
         return {
             "API_DOMAIN": "api.mosala.co.ls",
             "MEDIA_DOMAIN": "media.mosala.co.ls",
+            "API_HOST_BIND": "127.0.0.1",
+            "API_HOST_PORT": "8090",
             "TLS_EMAIL": "operations@mosala.co.ls",
             "APP_VERSION": "1.0.0",
             "RELEASE_SHA": "0123456789abcdef0123456789abcdef01234567",
@@ -48,6 +50,18 @@ class ProductionPreflightTests(unittest.TestCase):
         values = self.server_values()
         values["API_DOMAIN"] = "api.rentals.example.com"
         with self.assertRaisesRegex(PreflightError, "placeholder"):
+            validate_server_environment(values)
+
+    def test_server_configuration_rejects_public_raw_api_bind(self) -> None:
+        values = self.server_values()
+        values["API_HOST_BIND"] = "0.0.0.0"
+        with self.assertRaisesRegex(PreflightError, "loopback-only"):
+            validate_server_environment(values)
+
+    def test_server_configuration_rejects_invalid_api_port(self) -> None:
+        values = self.server_values()
+        values["API_HOST_PORT"] = "70000"
+        with self.assertRaisesRegex(PreflightError, "between 1 and 65535"):
             validate_server_environment(values)
 
     def test_server_configuration_rejects_reused_secrets(self) -> None:
